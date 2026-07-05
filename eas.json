@@ -1,0 +1,51 @@
+{
+  "cli": {
+    "version": ">= 10.0.0"
+  },
+  "build": {
+    "development": {
+      "developmentClient": false,
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "https://wbwibjurhobukhkrjfqz.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indid2lianVyaG9idWtoa3JqZnF6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODExMTE1NDIsImV4cCI6MjA5NjY4NzU0Mn0.nm0Hdd_tc3VWm01r9-BSPo8CWquyqg1tq9oi0KQT7Pg",
+        "EXPO_PUBLIC_FUNCTIONS_URL": "https://wbwibjurhobukhkrjfqz.supabase.co",
+        "EXPO_PUBLIC_FUNCTIONS_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indid2lianVyaG9idWtoa3JqZnF6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODExMTE1NDIsImV4cCI6MjA5NjY4NzU0Mn0.nm0Hdd_tc3VWm01r9-BSPo8CWquyqg1tq9oi0KQT7Pg",
+        "EXPO_PUBLIC_APP_ID": "app-c90by552ew3l"
+      },
+      "android": {
+        "buildType": "apk",
+        "gradleCommand": ":app:assembleDebug"
+      }
+    },
+    "preview": {
+      "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "https://wbwibjurhobukhkrjfqz.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indid2lianVyaG9idWtoa3JqZnF6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODExMTE1NDIsImV4cCI6MjA5NjY4NzU0Mn0.nm0Hdd_tc3VWm01r9-BSPo8CWquyqg1tq9oi0KQT7Pg",
+        "EXPO_PUBLIC_FUNCTIONS_URL": "https://wbwibjurhobukhkrjfqz.supabase.co",
+        "EXPO_PUBLIC_FUNCTIONS_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indid2lianVyaG9idWtoa3JqZnF6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODExMTE1NDIsImV4cCI6MjA5NjY4NzU0Mn0.nm0Hdd_tc3VWm01r9-BSPo8CWquyqg1tq9oi0KQT7Pg",
+        "EXPO_PUBLIC_APP_ID": "app-c90by552ew3l"
+      },
+      "android": {
+        "buildType": "apk",
+        "gradleCommand": ":app:assembleRelease -PreactNativeArchitectures=arm64-v8a,armeabi-v7a -Pandroid.enableMinifyInReleaseBuilds=true -Pandroid.enableShrinkResourcesInReleaseBuilds=true"
+      }
+    },
+    "production": {
+      "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "https://wbwibjurhobukhkrjfqz.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indid2lianVyaG9idWtoa3JqZnF6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODExMTE1NDIsImV4cCI6MjA5NjY4NzU0Mn0.nm0Hdd_tc3VWm01r9-BSPo8CWquyqg1tq9oi0KQT7Pg",
+        "EXPO_PUBLIC_FUNCTIONS_URL": "https://wbwibjurhobukhkrjfqz.supabase.co",
+        "EXPO_PUBLIC_FUNCTIONS_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indid2lianVyaG9idWtoa3JqZnF6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODExMTE1NDIsImV4cCI6MjA5NjY4NzU0Mn0.nm0Hdd_tc3VWm01r9-BSPo8CWquyqg1tq9oi0KQT7Pg",
+        "EXPO_PUBLIC_APP_ID": "app-c90by552ew3l"
+      },
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "ios": {}
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}
