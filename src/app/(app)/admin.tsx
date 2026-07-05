@@ -728,9 +728,8 @@ export default function AdminScreen() {
                 )}
                 renderItem={({ item, index }) => {
                   const s = STATUS_COLORS[item.subscription_status ?? 'none'] ?? STATUS_COLORS.none;
-                  const planLabel = item.subscription_plan
-                    ? item.subscription_plan.charAt(0).toUpperCase() + item.subscription_plan.slice(1)
-                    : '—';
+                  // Plan badge shows subscription STATUS (Premium/Trial/Expired/None), not plan type
+                  const statusLabel = s.label;
                   const expiry = item.subscription_end_date
                     ? dayjs(item.subscription_end_date).format('DD MMM YY')
                     : '—';
@@ -760,13 +759,13 @@ export default function AdminScreen() {
                       <Text style={{ width: 100, fontSize: 11, fontFamily: F.regular, color: '#374151' }} numberOfLines={1}>
                         {item.bar_registration_number ?? '—'}
                       </Text>
-                      {/* Plan */}
+                      {/* Plan — shows subscription status: Premium / Trial / Expired / None */}
                       <View style={{ width: 80, alignItems: 'center' }}>
                         <View style={{ backgroundColor: s.bg, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 }}>
-                          <Text style={{ fontSize: 10, fontFamily: F.bold, color: s.text }}>{planLabel}</Text>
+                          <Text style={{ fontSize: 10, fontFamily: F.bold, color: s.text }}>{statusLabel}</Text>
                         </View>
                       </View>
-                      {/* Cases */}
+                      {/* Cases — numeric count */}
                       <Text style={{ width: 56, fontSize: 13, fontFamily: F.bold, color: '#111827', textAlign: 'center' }}>
                         {item.case_count}
                       </Text>
