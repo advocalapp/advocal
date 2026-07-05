@@ -15,6 +15,7 @@ import DateTimePicker from 'react-native-ui-datepicker';
 import { CALENDAR_STYLES } from '@/lib/calendarStyles';
 import { scheduleTaskReminder, TASK_CHANNEL_ID } from '@/lib/notifications';
 import { setStoreTasks, getStoreTasks } from '@/lib/taskStore';
+import { createReminder } from '@/db/api';
 import { F } from '@/lib/fonts';
 import dayjs from 'dayjs';
 
@@ -392,11 +393,31 @@ export default function AddReminderScreen() {
     const diffDays = taskDay.diff(today, 'day');
     const smartLabel = diffDays === 0 ? 'Today' : diffDays === 1 ? 'Tomorrow' : dayjs(date).format('DD MMM YYYY');
 
-    // Write to task store so reminders / calendar screens pick it up
+    const newId = Date.now().toString();
+
+    // Persist to Supabase so reminders survive logout / reinstall
+    await createReminder({
+      id:               newId,
+      title:            title.trim(),
+      category:         type,
+      priority:         priority.toLowerCase(),
+      done:             false,
+      due_label:        smartLabel,
+      raw_date:         date.toISOString(),
+      reminder_time:    timePicked ? timeLabel() : null,
+      location:         location.trim() || null,
+      description:      description.trim() || null,
+      repeat:           repeat !== 'Does not repeat' ? repeat : null,
+      reminder_at:      fireAt ? fireAt.toISOString() : null,
+      reminder_advance: ADV_MAP[reminderBefore],
+      notification_id:  notifId ?? null,
+    });
+
+    // Write to in-memory store so tasks / calendar screens update immediately
     setStoreTasks([
       ...getStoreTasks(),
       {
-        id: Date.now().toString(),
+        id: newId,
         title: title.trim(),
         category: type,
         priority: priority.toLowerCase() as 'high' | 'medium' | 'low',
