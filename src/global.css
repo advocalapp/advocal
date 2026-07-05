@@ -1,0 +1,42 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* AdvoCal - Google color theme */
+    --background: 220 20% 97%;
+    --foreground: 220 13% 7%;
+    --card: 0 0% 100%;
+    --card-foreground: 220 13% 7%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 13% 7%;
+    /* Blue #0078ff */
+    --primary: 211 100% 50%;
+    --primary-foreground: 0 0% 100%;
+    /* Light gray for secondary */
+    --secondary: 220 14% 96%;
+    --secondary-foreground: 220 13% 18%;
+    --muted: 220 14% 95%;
+    --muted-foreground: 220 9% 46%;
+    /* Yellow #FBBC05 accent */
+    --accent: 45 97% 50%;
+    --accent-foreground: 220 13% 7%;
+    /* Red #EA4335 */
+    --destructive: 4 86% 56%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 218 88% 60%;
+    --radius: 1rem;
+  }
+}
+
+/* ── Web-only: remove browser focus rings from all inputs/textareas ────────── */
+input:focus,
+input:focus-visible,
+textarea:focus,
+textarea:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
