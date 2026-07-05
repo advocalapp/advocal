@@ -1,0 +1,85 @@
+{
+  "expo": {
+    "name": "Advocal",
+    "slug": "advocal-legal-calendar",
+    "version": "1.0.755",
+    "scheme": "advocal",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "buildNumber": "512",
+      "bundleIdentifier": "com.advocal.app"
+    },
+    "android": {
+      "googleServicesFile": "./google-services.json",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#fafafa"
+      },
+      "predictiveBackGestureEnabled": false,
+      "versionCode": 511,
+      "package": "com.advocal.app",
+      "permissions": [
+        "RECEIVE_BOOT_COMPLETED",
+        "SCHEDULE_EXACT_ALARM",
+        "VIBRATE"
+      ]
+    },
+    "web": {
+      "bundler": "metro",
+      "favicon": "./assets/favicon.png",
+      "name": "Advocal",
+      "shortName": "AdvoCal",
+      "lang": "en",
+      "description": "Legal Calendar & Case Tracker for Advocates — manage hearings, court dates and case files.",
+      "themeColor": "#0030CE",
+      "backgroundColor": "#ffffff",
+      "scope": "/",
+      "startUrl": "/",
+      "display": "standalone",
+      "orientation": "portrait"
+    },
+    "plugins": [
+      "./plugins/withAndroidBuildConfig",
+      "@react-native-async-storage/expo-with-async-storage",
+      "./plugins/withStripAsyncStorageMaven",
+      "expo-router",
+      "expo-asset",
+      "expo-sqlite",
+      "expo-font",
+      "expo-system-ui",
+      "expo-web-browser",
+      "expo-image",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow AdvoCal to access your photo library to upload your profile picture.",
+          "cameraPermission": "Allow AdvoCal to use your camera to take a profile photo."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#0030CE",
+          "defaultChannel": "task-reminders",
+          "sounds": [],
+          "enableBackgroundRemoteNotifications": true
+        }
+      ]
+    ],
+    "router": {
+      "root": "src"
+    },
+    "experiments": {
+      "typedRoutes": true
+    },
+    "splash": {
+      "image": "./assets/logo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    }
+  }
+}
