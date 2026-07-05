@@ -1,0 +1,30 @@
+diff --git a/lib/withAndroidAsyncStorage.js b/lib/withAndroidAsyncStorage.js
+index 4c1b6c7a76e9266e5e3a80de9bcc2b8900c8e0e9..bea4b1c3a1af5a5d05e72dd4f9c38e22b1e2a3e1 100644
+--- a/lib/withAndroidAsyncStorage.js
++++ b/lib/withAndroidAsyncStorage.js
+@@ -1,21 +1,8 @@
+ "use strict";
++// Patched: async-storage 2.x ships no local_repo directory.
++// Injecting a maven { url } pointing at a missing path breaks Gradle at
++// configuration time. This no-op prevents the injection entirely.
+ Object.defineProperty(exports, "__esModule", { value: true });
+ exports.withAndroidAsyncStorage = void 0;
+-const config_plugins_1 = require("expo/config-plugins");
+-const projectContent = 'project(":react-native-async-storage_async-storage")';
+-const KotlinUriContent = `url = uri(${projectContent}.file("local_repo"))`;
+-const GroovyUriContent = `url uri(${projectContent}.projectDir.toString() + "/local_repo")`;
+-const withAndroidAsyncStorage = (config) => {
+-    return (0, config_plugins_1.withProjectBuildGradle)(config, (mod) => {
+-        const contents = mod.modResults.contents;
+-        const isKt = mod.modResults.language === "kt";
+-        if (contents.includes("async-storage/local_repo") ||
+-            contents.includes(projectContent)) {
+-            return mod;
+-        }
+-        const mavenBlock = `maven { ${isKt ? KotlinUriContent : GroovyUriContent} }`;
+-        mod.modResults.contents = contents.replace(/allprojects\s*\{[\s\S]*?repositories\s*\{/, (match) => match + "\n\t" + mavenBlock);
+-        return mod;
+-    });
+-};
++const withAndroidAsyncStorage = (config) => config;
+ exports.withAndroidAsyncStorage = withAndroidAsyncStorage;
