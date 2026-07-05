@@ -13,6 +13,7 @@ import {
 import { getStoreTasks, setStoreTasks, subscribeStore, StoredTask } from '@/lib/taskStore';
 import { CALENDAR_STYLES } from '@/lib/calendarStyles';
 import { F } from '@/lib/fonts';
+import { scheduleTaskReminder, cancelTaskReminder, TASK_CHANNEL_ID } from '@/lib/notifications';
 
 // ─── Category config (icon + color) ──────────────────────────────────────────
 type ReminderType = 'Hearing' | 'Meeting' | 'Task' | 'Deadline' | 'Other';
@@ -179,6 +180,36 @@ function ReminderDetailSheet({
 type EditReminderType = 'Hearing' | 'Meeting' | 'Task' | 'Deadline' | 'Other';
 type EditPriority    = 'Low' | 'Medium' | 'High';
 type EditRepeat      = 'Does not repeat' | 'Daily' | 'Weekly' | 'Monthly' | 'Yearly';
+type EditReminderBefore = 'At event time' | '5 minutes before' | '10 minutes before' | '15 minutes before' | '30 minutes before' | '1 hour before' | '2 hours before' | '1 day before';
+
+const EDIT_ADV_MAP: Record<EditReminderBefore, number> = {
+  'At event time':     0,
+  '5 minutes before':  5,
+  '10 minutes before': 10,
+  '15 minutes before': 15,
+  '30 minutes before': 30,
+  '1 hour before':     60,
+  '2 hours before':    120,
+  '1 day before':      1440,
+};
+
+const EDIT_REMINDER_BEFORE_OPTIONS: EditReminderBefore[] = [
+  'At event time', '5 minutes before', '10 minutes before', '15 minutes before',
+  '30 minutes before', '1 hour before', '2 hours before', '1 day before',
+];
+
+function advanceToLabel(minutes?: number): EditReminderBefore {
+  switch (minutes) {
+    case 5:    return '5 minutes before';
+    case 10:   return '10 minutes before';
+    case 15:   return '15 minutes before';
+    case 30:   return '30 minutes before';
+    case 60:   return '1 hour before';
+    case 120:  return '2 hours before';
+    case 1440: return '1 day before';
+    default:   return 'At event time';
+  }
+}
 
 const EDIT_TYPES: { key: EditReminderType; icon: React.ComponentType<any> }[] = [
   { key: 'Hearing',  icon: Building2 },
@@ -216,20 +247,22 @@ function EditReminderSheet({
   const [priority,    setPriority]    = useState<EditPriority>(
     item.priority === 'high' ? 'High' : item.priority === 'low' ? 'Low' : 'Medium',
   );
-  const [repeat,      setRepeat]      = useState<EditRepeat>((item.repeat as EditRepeat) ?? 'Does not repeat');
-  const [location,    setLocation]    = useState(item.location ?? '');
-  const [description, setDescription] = useState(item.description ?? '');
-  const [date,        setDate]        = useState<Date>(initDate);
-  const [hour,        setHour]        = useState(parsed.hour);
-  const [minute,      setMinute]      = useState(parsed.minute);
-  const [ampm,        setAmpm]        = useState<'AM' | 'PM'>(parsed.ampm);
-  const [timePicked,  setTimePicked]  = useState(!!item.reminderTime);
-  const [timeError,   setTimeError]   = useState('');
+  const [repeat,          setRepeat]          = useState<EditRepeat>((item.repeat as EditRepeat) ?? 'Does not repeat');
+  const [reminderBefore,  setReminderBefore]  = useState<EditReminderBefore>(advanceToLabel(item.reminderAdvance));
+  const [location,        setLocation]        = useState(item.location ?? '');
+  const [description,     setDescription]     = useState(item.description ?? '');
+  const [date,            setDate]            = useState<Date>(initDate);
+  const [hour,            setHour]            = useState(parsed.hour);
+  const [minute,          setMinute]          = useState(parsed.minute);
+  const [ampm,            setAmpm]            = useState<'AM' | 'PM'>(parsed.ampm);
+  const [timePicked,      setTimePicked]      = useState(!!item.reminderTime);
+  const [timeError,       setTimeError]       = useState('');
 
-  const [showDate,    setShowDate]    = useState(false);
-  const [showTime,    setShowTime]    = useState(false);
-  const [showRepeat,  setShowRepeat]  = useState(false);
-  const [error,       setError]       = useState('');
+  const [showDate,          setShowDate]          = useState(false);
+  const [showTime,          setShowTime]          = useState(false);
+  const [showRepeat,        setShowRepeat]        = useState(false);
+  const [showReminderSheet, setShowReminderSheet] = useState(false);
+  const [error,             setError]             = useState('');
 
   /** Convert current hour/minute/ampm → h24 as Date on `d` */
   const buildTimeDate = (d: Date, h: number, m: number, ap: 'AM' | 'PM'): Date => {
@@ -258,7 +291,7 @@ function EditReminderSheet({
     return diff === 0 ? 'Today' : diff === 1 ? 'Tomorrow' : dayjs(d).format('DD MMM YYYY');
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!title.trim()) { setError('Title is required.'); return; }
     const today = dayjs().startOf('day');
     if (dayjs(date).startOf('day').isBefore(today)) {
@@ -269,17 +302,43 @@ function EditReminderSheet({
       if (tErr) { setError(tErr); return; }
     }
     setError('');
+
+    // Build fire time: task time minus advance
+    let newFireAt: Date | null = null;
+    if (timePicked) {
+      const taskTime = buildTimeDate(date, hour, minute, ampm);
+      const advanceMs = EDIT_ADV_MAP[reminderBefore] * 60 * 1000;
+      newFireAt = advanceMs === 0 ? new Date(taskTime) : new Date(taskTime.getTime() - advanceMs);
+      // If fire time is in the past, clear it
+      if (newFireAt <= new Date()) newFireAt = null;
+    }
+
+    // Cancel old notification before scheduling new one
+    if (item.notificationId) {
+      await cancelTaskReminder(item.notificationId);
+    }
+
+    // Schedule new notification
+    let newNotifId: string | undefined;
+    if (newFireAt) {
+      const id = await scheduleTaskReminder(title.trim(), newFireAt);
+      newNotifId = id ?? undefined;
+    }
+
     onSave({
       ...item,
-      title:        title.trim(),
+      title:          title.trim(),
       category,
-      priority:     priority.toLowerCase() as 'high' | 'medium' | 'low',
-      dueLabel:     smartLabel(date),
-      rawDate:      date.toISOString(),
-      reminderTime: timePicked ? timeLabel(hour, minute, ampm) : undefined,
-      location:     location.trim() || undefined,
-      description:  description.trim() || undefined,
-      repeat:       repeat !== 'Does not repeat' ? repeat : undefined,
+      priority:       priority.toLowerCase() as 'high' | 'medium' | 'low',
+      dueLabel:       smartLabel(date),
+      rawDate:        date.toISOString(),
+      reminderTime:   timePicked ? timeLabel(hour, minute, ampm) : undefined,
+      location:       location.trim() || undefined,
+      description:    description.trim() || undefined,
+      repeat:         repeat !== 'Does not repeat' ? repeat : undefined,
+      reminderAt:     newFireAt,
+      reminderAdvance: EDIT_ADV_MAP[reminderBefore],
+      notificationId: newNotifId,
     });
   };
 
@@ -373,6 +432,18 @@ function EditReminderSheet({
                 </Text>
               </Pressable>
             </View>
+
+            {/* Reminder Before */}
+            <Text style={{ fontSize: 12, fontFamily: F.bold, color: '#6B7280', marginBottom: 6 }}>REMIND ME</Text>
+            <Pressable onPress={() => setShowReminderSheet(true)}
+              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#fff', borderRadius: 12, borderWidth: 1.5, borderColor: '#E5E7EB', paddingHorizontal: 14, paddingVertical: 13, marginBottom: 14 }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Bell size={16} color="#0078ff" strokeWidth={2} />
+                <Text style={{ fontSize: 14, fontFamily: F.bold, color: reminderBefore !== 'At event time' ? '#0078ff' : '#111827' }}>{reminderBefore}</Text>
+              </View>
+              <ChevronDown size={16} color="#9CA3AF" strokeWidth={2} />
+            </Pressable>
 
             {/* Priority */}
             <Text style={{ fontSize: 12, fontFamily: F.bold, color: '#6B7280', marginBottom: 8 }}>PRIORITY</Text>
@@ -521,6 +592,28 @@ function EditReminderSheet({
             </Pressable>
           </Pressable>
         </Modal>
+
+        {/* ── Remind Me dropdown nested modal ── */}
+        <Modal transparent animationType="slide" visible={showReminderSheet} onRequestClose={() => setShowReminderSheet(false)}>
+          <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' }} onPress={() => setShowReminderSheet(false)}>
+            <Pressable onPress={() => {}} style={{ backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 32 }}>
+              <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: '#E5E7EB', alignSelf: 'center', marginBottom: 16 }} />
+              <Text style={{ fontSize: 15, fontFamily: F.bold, color: '#111827', marginBottom: 8, textAlign: 'center' }}>Remind Me</Text>
+              {EDIT_REMINDER_BEFORE_OPTIONS.map((opt) => (
+                <Pressable key={opt} onPress={() => { setReminderBefore(opt); setShowReminderSheet(false); }}
+                  style={{ paddingVertical: 14, paddingHorizontal: 12, borderRadius: 10, backgroundColor: reminderBefore === opt ? '#EEF4FF' : 'transparent', marginBottom: 4, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}
+                >
+                  <Text style={{ fontSize: 15, fontFamily: F.bold, color: reminderBefore === opt ? '#0078ff' : '#374151' }}>{opt}</Text>
+                  {reminderBefore === opt && (
+                    <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: '#0078ff', alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={{ color: '#fff', fontSize: 12 }}>✓</Text>
+                    </View>
+                  )}
+                </Pressable>
+              ))}
+            </Pressable>
+          </Pressable>
+        </Modal>
       </KeyboardAvoidingView>
     </Modal>
   );
@@ -625,7 +718,12 @@ export default function RemindersScreen() {
     setSelected(null);
   };
 
-  const deleteReminder = (id: string) => {
+  const deleteReminder = async (id: string) => {
+    // Cancel the scheduled OS notification before removing from store
+    const task = getStoreTasks().find((t) => t.id === id);
+    if (task?.notificationId) {
+      await cancelTaskReminder(task.notificationId);
+    }
     const next = getStoreTasks().filter((t) => t.id !== id);
     setStoreTasks(next);
     setReminders([...next]);
