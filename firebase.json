@@ -1,0 +1,20 @@
+{
+  "hosting": {
+    "public": "public",
+    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+    "rewrites": [
+      { "source": "/payment-success", "destination": "/payment-success.html" },
+      { "source": "/payment-failed",  "destination": "/payment-failed.html"  }
+    ],
+    "headers": [
+      {
+        "source": "**/*.html",
+        "headers": [
+          { "key": "Cache-Control", "value": "no-store" },
+          { "key": "X-Content-Type-Options", "value": "nosniff" },
+          { "key": "Content-Type", "value": "text/html; charset=utf-8" }
+        ]
+      }
+    ]
+  }
+}
