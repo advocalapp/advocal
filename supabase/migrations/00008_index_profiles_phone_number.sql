@@ -1,0 +1,1 @@
+CREATE INDEX IF NOT EXISTS profiles_phone_number_idx ON profiles(phone_number) WHERE phone_number IS NOT NULL;
