@@ -13,7 +13,7 @@ function json(body: unknown, status = 200) {
   });
 }
 
-const ADMIN_PASSWORD = 'Redmoon@1217';
+const ADMIN_PASSWORD = '1707';
 const PLAN_DAYS: Record<string, number> = { monthly: 30, yearly: 365 };
 
 serve(async (req) => {
