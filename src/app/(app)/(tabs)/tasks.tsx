@@ -14,6 +14,11 @@ import { getStoreTasks, setStoreTasks, subscribeStore, StoredTask } from '@/lib/
 import { CALENDAR_STYLES } from '@/lib/calendarStyles';
 import { F } from '@/lib/fonts';
 import { scheduleTaskReminder, cancelTaskReminder, TASK_CHANNEL_ID } from '@/lib/notifications';
+import {
+  getReminders as fetchRemindersFromDB,
+  updateReminder as updateReminderInDB,
+  deleteReminder as deleteReminderFromDB,
+} from '@/db/api';
 
 // ─── Category config (icon + color) ──────────────────────────────────────────
 type ReminderType = 'Hearing' | 'Meeting' | 'Task' | 'Deadline' | 'Other';
@@ -702,20 +707,41 @@ export default function RemindersScreen() {
   const [selectedReminder, setSelected]     = useState<StoredTask | null>(null);
   const [editingReminder, setEditing]       = useState<StoredTask | null>(null);
 
-  // Stay in sync with store
+  // On focus: load from Supabase and seed the in-memory store so all screens stay current
   useFocusEffect(
     useCallback(() => {
-      setReminders([...getStoreTasks()]);
+      (async () => {
+        const rows = await fetchRemindersFromDB();
+        const tasks: StoredTask[] = rows.map((r) => ({
+          id:              r.id,
+          title:           r.title,
+          category:        r.category,
+          priority:        r.priority as 'high' | 'medium' | 'low',
+          done:            r.done,
+          dueLabel:        r.due_label,
+          rawDate:         r.raw_date ?? undefined,
+          reminderTime:    r.reminder_time ?? undefined,
+          location:        r.location ?? undefined,
+          description:     r.description ?? undefined,
+          repeat:          r.repeat ?? undefined,
+          reminderAt:      r.reminder_at ? new Date(r.reminder_at) : undefined,
+          reminderAdvance: r.reminder_advance,
+          notificationId:  r.notification_id ?? undefined,
+        }));
+        setStoreTasks(tasks);
+        setReminders([...tasks]);
+      })();
       const unsub = subscribeStore(() => setReminders([...getStoreTasks()]));
       return unsub;
     }, []),
   );
 
-  const markComplete = (id: string) => {
+  const markComplete = async (id: string) => {
     const next = getStoreTasks().map((t) => t.id === id ? { ...t, done: true } : t);
     setStoreTasks(next);
     setReminders([...next]);
     setSelected(null);
+    await updateReminderInDB(id, { done: true });
   };
 
   const deleteReminder = async (id: string) => {
@@ -728,12 +754,16 @@ export default function RemindersScreen() {
     setStoreTasks(next);
     setReminders([...next]);
     setSelected(null);
+    await deleteReminderFromDB(id);
   };
 
-  const toggleDone = (id: string) => {
-    const next = getStoreTasks().map((t) => t.id === id ? { ...t, done: !t.done } : t);
+  const toggleDone = async (id: string) => {
+    const task = getStoreTasks().find((t) => t.id === id);
+    const newDone = !(task?.done ?? false);
+    const next = getStoreTasks().map((t) => t.id === id ? { ...t, done: newDone } : t);
     setStoreTasks(next);
     setReminders([...next]);
+    await updateReminderInDB(id, { done: newDone });
   };
 
   const filtered = reminders.filter((r) => {
@@ -884,11 +914,27 @@ export default function RemindersScreen() {
         <EditReminderSheet
           item={editingReminder}
           onClose={() => setEditing(null)}
-          onSave={(updated) => {
+          onSave={async (updated) => {
             const next = getStoreTasks().map((t) => t.id === updated.id ? updated : t);
             setStoreTasks(next);
             setReminders([...next]);
             setEditing(null);
+            // Persist edit to Supabase
+            await updateReminderInDB(updated.id, {
+              title:            updated.title,
+              category:         updated.category,
+              priority:         updated.priority,
+              done:             updated.done,
+              due_label:        updated.dueLabel,
+              raw_date:         updated.rawDate ?? null,
+              reminder_time:    updated.reminderTime ?? null,
+              location:         updated.location ?? null,
+              description:      updated.description ?? null,
+              repeat:           updated.repeat ?? null,
+              reminder_at:      updated.reminderAt ? updated.reminderAt.toISOString() : null,
+              reminder_advance: updated.reminderAdvance ?? 0,
+              notification_id:  updated.notificationId ?? null,
+            });
           }}
         />
       )}
