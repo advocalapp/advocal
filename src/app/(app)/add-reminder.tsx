@@ -21,7 +21,7 @@ import dayjs from 'dayjs';
 // ─── Types ────────────────────────────────────────────────────────────────────
 type ReminderType = 'Hearing' | 'Meeting' | 'Task' | 'Deadline' | 'Other';
 type Priority = 'Low' | 'Medium' | 'High';
-type ReminderBefore = '5 minutes before' | '10 minutes before' | '15 minutes before' | '30 minutes before' | '1 hour before' | '2 hours before' | '1 day before';
+type ReminderBefore = 'At event time' | '5 minutes before' | '10 minutes before' | '15 minutes before' | '30 minutes before' | '1 hour before' | '2 hours before' | '1 day before';
 type RepeatOption = 'Does not repeat' | 'Daily' | 'Weekly' | 'Monthly' | 'Yearly';
 
 // ─── Type chips config ────────────────────────────────────────────────────────
@@ -34,7 +34,7 @@ const TYPES: { key: ReminderType; icon: React.ComponentType<any>; color: string 
 ];
 
 const REMINDER_BEFORE_OPTIONS: ReminderBefore[] = [
-  '5 minutes before', '10 minutes before', '15 minutes before',
+  'At event time', '5 minutes before', '10 minutes before', '15 minutes before',
   '30 minutes before', '1 hour before', '2 hours before', '1 day before',
 ];
 
@@ -247,7 +247,7 @@ export default function AddReminderScreen() {
   const [ampm, setAmpm]                     = useState<'AM' | 'PM'>('AM');
   const [location, setLocation]             = useState('');
   const [description, setDescription]       = useState('');
-  const [reminderBefore, setReminderBefore] = useState<ReminderBefore>('15 minutes before');
+  const [reminderBefore, setReminderBefore] = useState<ReminderBefore>('At event time');
   const [repeat, setRepeat]                 = useState<RepeatOption>('Does not repeat');
   const [priority, setPriority]             = useState<Priority>('Medium');
   const [error, setError]                   = useState('');
@@ -263,6 +263,7 @@ export default function AddReminderScreen() {
 
   // ── Advance minutes map ─────────────────────────────────────────────────────
   const ADV_MAP: Record<ReminderBefore, number> = {
+    'At event time':     0,
     '5 minutes before':  5,
     '10 minutes before': 10,
     '15 minutes before': 15,
@@ -290,11 +291,12 @@ export default function AddReminderScreen() {
     return d;
   };
 
-  // Fire time = task time minus advance
+  // Fire time = task time minus advance (0 advance = at event time)
   const buildFireTime = (): Date | null => {
     const taskTime = buildTaskTime();
     if (!taskTime) return null;
-    return new Date(taskTime.getTime() - ADV_MAP[reminderBefore] * 60 * 1000);
+    const advanceMs = ADV_MAP[reminderBefore] * 60 * 1000;
+    return advanceMs === 0 ? new Date(taskTime) : new Date(taskTime.getTime() - advanceMs);
   };
 
   // Live preview label shown below Reminder Before selector
@@ -376,8 +378,10 @@ export default function AddReminderScreen() {
     const fireAt = buildFireTime();
 
     // Schedule the first (or only) notification
+    let notifId: string | undefined;
     if (fireAt && fireAt > new Date()) {
-      await scheduleTaskReminder(title.trim(), fireAt);
+      const id = await scheduleTaskReminder(title.trim(), fireAt);
+      notifId = id ?? undefined;
       // Schedule repeat occurrences if needed
       if (repeat !== 'Does not repeat') {
         await scheduleRepeatNotifications(title.trim(), fireAt);
@@ -404,6 +408,8 @@ export default function AddReminderScreen() {
         description: description.trim() || undefined,
         repeat: repeat !== 'Does not repeat' ? repeat : undefined,
         reminderAt: fireAt,
+        reminderAdvance: ADV_MAP[reminderBefore],
+        notificationId: notifId,
       },
     ]);
 
