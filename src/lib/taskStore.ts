@@ -24,7 +24,10 @@ export interface StoredTask {
   repeat?: string;
   caseRef?: string;
   reminderAt?: Date | null;
+  /** Minutes before the event that the notification fires (0 = at event time) */
   reminderAdvance?: number;
+  /** expo-notifications identifier — used to cancel on delete/edit */
+  notificationId?: string;
 }
 
 type Listener = () => void;
