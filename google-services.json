@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "703409654768",
+    "project_id": "advocal-b5831",
+    "storage_bucket": "advocal-b5831.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:703409654768:android:8377042ac272eceb34ab35",
+        "android_client_info": {
+          "package_name": "com.advocal.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBZ6xEqthZd6Pa_xslMArtUxSsYy-iJDqI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
