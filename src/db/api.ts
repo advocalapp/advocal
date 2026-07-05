@@ -279,3 +279,75 @@ export async function removeTeamMember(id: string) {
   const { error } = await supabase.from('team_members').delete().eq('id', id);
   return { error };
 }
+
+// ─── Reminders (persisted to Supabase) ───────────────────────────────────────
+
+export interface DbReminder {
+  id: string;
+  user_id?: string;
+  title: string;
+  category: string;
+  priority: string;
+  done: boolean;
+  due_label: string;
+  raw_date: string | null;
+  reminder_time: string | null;
+  location: string | null;
+  description: string | null;
+  repeat: string | null;
+  reminder_at: string | null;
+  reminder_advance: number;
+  notification_id: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+/** Fetch all reminders for the current user (done + pending) */
+export async function getReminders(): Promise<DbReminder[]> {
+  const { data } = await supabase
+    .from('reminders')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(500);
+  return Array.isArray(data) ? data : [];
+}
+
+/** Insert a new reminder row */
+export async function createReminder(r: Omit<DbReminder, 'user_id' | 'created_at' | 'updated_at'>) {
+  const { error } = await supabase.from('reminders').insert({
+    id:               r.id,
+    title:            r.title,
+    category:         r.category,
+    priority:         r.priority,
+    done:             r.done,
+    due_label:        r.due_label,
+    raw_date:         r.raw_date,
+    reminder_time:    r.reminder_time ?? null,
+    location:         r.location ?? null,
+    description:      r.description ?? null,
+    repeat:           r.repeat ?? null,
+    reminder_at:      r.reminder_at ?? null,
+    reminder_advance: r.reminder_advance ?? 0,
+    notification_id:  r.notification_id ?? null,
+    updated_at:       new Date().toISOString(),
+  });
+  if (error) console.error('[createReminder]', error.message);
+  return { error };
+}
+
+/** Update an existing reminder row */
+export async function updateReminder(id: string, updates: Partial<Omit<DbReminder, 'id' | 'user_id' | 'created_at'>>) {
+  const { error } = await supabase
+    .from('reminders')
+    .update({ ...updates, updated_at: new Date().toISOString() })
+    .eq('id', id);
+  if (error) console.error('[updateReminder]', error.message);
+  return { error };
+}
+
+/** Hard-delete a reminder row */
+export async function deleteReminder(id: string) {
+  const { error } = await supabase.from('reminders').delete().eq('id', id);
+  if (error) console.error('[deleteReminder]', error.message);
+  return { error };
+}
