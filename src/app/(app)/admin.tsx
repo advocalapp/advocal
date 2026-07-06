@@ -1,16 +1,17 @@
 /**
  * Admin Dashboard — Subscription Analytics + Legal Content Editor
  * Accessible only to users with role = 'admin'.
+ * Mobile-responsive: hamburger drawer nav, card-based user list.
  */
 import { useState, useCallback, useRef } from 'react';
-import { View, Text, FlatList, Pressable, ActivityIndicator, TextInput, ScrollView, Modal } from 'react-native';
+import { View, Text, FlatList, Pressable, ActivityIndicator, TextInput, ScrollView, Modal, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import {
   ArrowLeft, Users, CreditCard, Clock, XCircle, RefreshCw,
   Calendar, BadgeCheck, Search, FileText, Save, Info, CalendarPlus,
-  Eye, EyeOff, CheckCircle, ChevronDown,
+  Eye, EyeOff, CheckCircle, Menu, X, LayoutDashboard, Scale,
 } from 'lucide-react-native';
 import { supabase } from '@/client/supabase';
 import { F } from '@/lib/fonts';
@@ -499,25 +500,37 @@ function UserDetailModal({ visible, userId, onClose }: { visible: boolean; userI
   );
 }
 
+type Section = 'dashboard' | 'users' | 'legal';
+
+const NAV_ITEMS: { key: Section; label: string; icon: typeof Users; color: string }[] = [
+  { key: 'dashboard', label: 'Dashboard',     icon: LayoutDashboard, color: '#0078ff' },
+  { key: 'users',     label: 'Users',          icon: Users,           color: '#6558F5' },
+  { key: 'legal',     label: 'Legal Content',  icon: Scale,           color: '#D48B2F' },
+];
+
 export default function AdminScreen() {
   const router = useRouter();
-  const [activeTab, setActiveTab]     = useState<'users' | 'legal'>('users');
-  const [users, setUsers]             = useState<AdminUser[]>([]);
-  const [total, setTotal]             = useState(0);
-  const [loading, setLoading]         = useState(false);
-  const [filter, setFilter]           = useState<FilterStatus>('all');
-  const [search, setSearch]           = useState('');
-  const [page, setPage]               = useState(0);
-  const [stats, setStats]             = useState({ trial: 0, premium: 0, expired: 0, none: 0, monthly: 0, yearly: 0, revenue_monthly: 0, revenue_yearly: 0 });
+  const { width } = useWindowDimensions();
 
-  // Extend Plan modal
-  const [extendUser, setExtendUser]   = useState<AdminUser | null>(null);
-  // Info modal
-  const [detailUserId, setDetailId]   = useState<string | null>(null);
+  const [activeSection, setActiveSection] = useState<Section>('dashboard');
+  const [drawerOpen, setDrawerOpen]       = useState(false);
 
-  // Admin identity (fetched once)
-  const [adminId, setAdminId]         = useState('');
-  const [adminName, setAdminName]     = useState('Admin');
+  const [users, setUsers]   = useState<AdminUser[]>([]);
+  const [total, setTotal]   = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [filter, setFilter]   = useState<FilterStatus>('all');
+  const [search, setSearch]   = useState('');
+  const [page, setPage]       = useState(0);
+  const [stats, setStats]     = useState({
+    trial: 0, premium: 0, expired: 0, none: 0,
+    monthly: 0, yearly: 0, revenue_monthly: 0, revenue_yearly: 0,
+  });
+
+  const [extendUser, setExtendUser] = useState<AdminUser | null>(null);
+  const [detailUserId, setDetailId] = useState<string | null>(null);
+
+  const [adminId, setAdminId]     = useState('');
+  const [adminName, setAdminName] = useState('Admin');
 
   const PAGE_SIZE = 20;
 
@@ -587,16 +600,11 @@ export default function AdminScreen() {
     const next = page + 1; setPage(next); fetchUsers(next, filter, search);
   };
 
-  // After successful extend, refresh the specific user row
   const handleExtendSuccess = (userId: string) => {
     fetchStats();
     fetchUsers(0, filter, search);
     setExtendUser(null);
-    // Update local row immediately
-    setUsers((prev) => prev.map((u) => u.id === userId
-      ? { ...u, subscription_status: 'premium' }
-      : u
-    ));
+    setUsers((prev) => prev.map((u) => u.id === userId ? { ...u, subscription_status: 'premium' } : u));
   };
 
   const FILTERS: { key: FilterStatus; label: string }[] = [
@@ -604,206 +612,307 @@ export default function AdminScreen() {
     { key: 'premium', label: 'Paid' }, { key: 'expired', label: 'Expired' }, { key: 'none', label: 'None' },
   ];
 
+  const navigateTo = (section: Section) => {
+    setActiveSection(section);
+    setDrawerOpen(false);
+  };
+
+  const activeNav = NAV_ITEMS.find((n) => n.key === activeSection)!;
+
+  // ── Dashboard section ────────────────────────────────────────────────────────
+  const DashboardSection = () => (
+    <ScrollView
+      contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 40 }}
+      showsVerticalScrollIndicator={false}
+    >
+      <Text style={{ fontSize: 12, fontFamily: F.bold, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 4 }}>
+        Subscription Overview
+      </Text>
+
+      {/* Status stats 2×2 */}
+      <View style={{ flexDirection: 'row', gap: 10 }}>
+        <StatCard icon={Clock}      label="Trial"   value={stats.trial}   color="#D48B2F" onPress={() => { navigateTo('users'); handleFilterChange('trial');   }} active={false} />
+        <StatCard icon={BadgeCheck} label="Paid"    value={stats.premium} color="#1E8A3C" onPress={() => { navigateTo('users'); handleFilterChange('premium'); }} active={false} />
+      </View>
+      <View style={{ flexDirection: 'row', gap: 10 }}>
+        <StatCard icon={XCircle} label="Expired" value={stats.expired} color="#E53E3E" onPress={() => { navigateTo('users'); handleFilterChange('expired'); }} active={false} />
+        <StatCard icon={Users}   label="No Plan" value={stats.none}    color="#9CA3AF" onPress={() => { navigateTo('users'); handleFilterChange('none');    }} active={false} />
+      </View>
+
+      <View style={{ height: 1, backgroundColor: '#EEF2F7' }} />
+
+      {/* Plan type stats */}
+      <Text style={{ fontSize: 12, fontFamily: F.bold, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 0.8 }}>
+        Plan Breakdown
+      </Text>
+      <View style={{ flexDirection: 'row', gap: 10 }}>
+        <StatCard icon={Calendar}   label="Monthly Subs" value={stats.monthly} color="#3B6FF0" active={false} />
+        <StatCard icon={CreditCard} label="Yearly Subs"  value={stats.yearly}  color="#6558F5" active={false} />
+      </View>
+
+      <View style={{ height: 1, backgroundColor: '#EEF2F7' }} />
+
+      {/* Revenue */}
+      <Text style={{ fontSize: 12, fontFamily: F.bold, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 0.8 }}>
+        Revenue (Razorpay)
+      </Text>
+      <View style={{ flexDirection: 'row', gap: 10 }}>
+        <StatCard icon={CreditCard} label="Monthly Rev." value={`₹${stats.revenue_monthly.toLocaleString('en-IN')}`} color="#0EA5E9" active={false} />
+        <StatCard icon={CreditCard} label="Yearly Rev."  value={`₹${stats.revenue_yearly.toLocaleString('en-IN')}`}  color="#8B5CF6" active={false} />
+      </View>
+      <View style={{ backgroundColor: '#EEF4FF', borderRadius: 14, padding: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderColor: '#C7D9FF' }}>
+        <Text style={{ fontSize: 14, fontFamily: F.bold, color: '#111827' }}>Total Revenue</Text>
+        <Text style={{ fontSize: 22, fontFamily: F.extraBold, color: '#0078ff' }}>
+          ₹{(stats.revenue_monthly + stats.revenue_yearly).toLocaleString('en-IN')}
+        </Text>
+      </View>
+    </ScrollView>
+  );
+
+  // ── Users section ────────────────────────────────────────────────────────────
+  const UsersSection = () => (
+    <FlatList
+      data={users}
+      keyExtractor={(u) => u.id}
+      contentInsetAdjustmentBehavior="automatic"
+      contentContainerStyle={{ paddingBottom: 40 }}
+      onEndReached={handleLoadMore}
+      onEndReachedThreshold={0.5}
+      showsVerticalScrollIndicator={false}
+      ListHeaderComponent={() => (
+        <View style={{ paddingHorizontal: 16, paddingTop: 16, gap: 12 }}>
+          {/* Total users pill */}
+          <View style={{ backgroundColor: '#FFFFFF', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderColor: '#EEF2F7' }}>
+            <Text style={{ fontSize: 14, fontFamily: F.bold, color: '#111827' }}>Total Users</Text>
+            <Text style={{ fontSize: 22, fontFamily: F.extraBold, color: '#0078ff' }}>{total}</Text>
+          </View>
+
+          {/* Search */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB', paddingHorizontal: 12, gap: 8 }}>
+            <Search size={15} color="#9CA3AF" strokeWidth={2} />
+            <TextInput
+              value={search} onChangeText={handleSearch}
+              placeholder="Search by name, phone, email..."
+              placeholderTextColor="#C4CCDF"
+              style={{ flex: 1, fontSize: 14, fontFamily: F.regular, color: '#111827', paddingVertical: 12 }}
+            />
+          </View>
+
+          {/* Filter chips */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+            {FILTERS.map(({ key, label }) => (
+              <Pressable key={key} onPress={() => handleFilterChange(key)}
+                style={{ paddingHorizontal: 16, paddingVertical: 8, borderRadius: 999, backgroundColor: filter === key ? '#0078ff' : '#FFFFFF', borderWidth: 1, borderColor: filter === key ? '#0078ff' : '#E5E7EB' }}>
+                <Text style={{ fontSize: 13, fontFamily: F.bold, color: filter === key ? '#FFFFFF' : '#6B7280' }}>{label}</Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+
+          <Text style={{ fontSize: 12, fontFamily: F.bold, color: '#9CA3AF', letterSpacing: 0.6, textTransform: 'uppercase' }}>
+            {users.length} of {total} Users
+          </Text>
+        </View>
+      )}
+      renderItem={({ item }) => {
+        const s = STATUS_COLORS[item.subscription_status ?? 'none'] ?? STATUS_COLORS.none;
+        const expiry = item.subscription_end_date
+          ? dayjs(item.subscription_end_date).format('DD MMM YYYY')
+          : 'No expiry';
+        return (
+          <View style={{
+            marginHorizontal: 16, marginTop: 10,
+            backgroundColor: '#FFFFFF', borderRadius: 14,
+            borderWidth: 1, borderColor: '#EEF2F7',
+            padding: 14, gap: 10,
+          }}>
+            {/* Row 1: Avatar + Name + Status badge */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#EEF4FF', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <Text style={{ fontSize: 16, fontFamily: F.bold, color: '#0078ff' }}>
+                  {(item.full_name ?? item.email ?? '?').charAt(0).toUpperCase()}
+                </Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 14, fontFamily: F.bold, color: '#0D1A3A' }} numberOfLines={1}>
+                  {item.full_name ?? 'Unknown'}
+                </Text>
+                <Text style={{ fontSize: 12, fontFamily: F.regular, color: '#6B7280' }} numberOfLines={1}>
+                  {item.phone_number ? `+91 ${item.phone_number}` : (item.email ?? '—')}
+                </Text>
+              </View>
+              <View style={{ backgroundColor: s.bg, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4 }}>
+                <Text style={{ fontSize: 11, fontFamily: F.bold, color: s.text }}>{s.label}</Text>
+              </View>
+            </View>
+
+            {/* Divider */}
+            <View style={{ height: 1, backgroundColor: '#F3F4F6' }} />
+
+            {/* Row 2: Bar No + Cases count */}
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <View style={{ flex: 1, backgroundColor: '#F8FAFF', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 }}>
+                <Text style={{ fontSize: 10, fontFamily: F.bold, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 }}>Bar No.</Text>
+                <Text style={{ fontSize: 13, fontFamily: F.semiBold, color: '#111827' }} numberOfLines={1}>
+                  {item.bar_registration_number ?? '—'}
+                </Text>
+              </View>
+              <View style={{ width: 80, backgroundColor: '#F8FAFF', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 }}>
+                <Text style={{ fontSize: 10, fontFamily: F.bold, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 }}>Cases</Text>
+                <Text style={{ fontSize: 13, fontFamily: F.extraBold, color: '#0078ff' }}>{item.case_count}</Text>
+              </View>
+            </View>
+
+            {/* Row 3: Expiry */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Calendar size={13} color="#9CA3AF" strokeWidth={2} />
+              <Text style={{ fontSize: 12, fontFamily: F.semiBold, color: '#6B7280' }}>
+                Expires: <Text style={{ color: '#374151' }}>{expiry}</Text>
+              </Text>
+            </View>
+
+            {/* Row 4: Action buttons */}
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <Pressable
+                onPress={() => setDetailId(item.id)}
+                style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: '#EEF4FF', borderRadius: 10, paddingVertical: 10 }}
+              >
+                <Info size={14} color="#0078ff" strokeWidth={2} />
+                <Text style={{ fontSize: 12, fontFamily: F.bold, color: '#0078ff' }}>Details</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => setExtendUser(item)}
+                style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: '#E8F5E9', borderRadius: 10, paddingVertical: 10 }}
+              >
+                <CalendarPlus size={14} color="#1E8A3C" strokeWidth={2} />
+                <Text style={{ fontSize: 12, fontFamily: F.bold, color: '#1E8A3C' }}>Extend Plan</Text>
+              </Pressable>
+            </View>
+          </View>
+        );
+      }}
+      ListFooterComponent={() => (
+        loading ? <ActivityIndicator style={{ marginVertical: 24 }} color="#0078ff" /> : null
+      )}
+      ListEmptyComponent={() => (
+        !loading ? (
+          <View style={{ alignItems: 'center', paddingTop: 60, gap: 10 }}>
+            <Users size={44} color="#D1D5DB" strokeWidth={1.5} />
+            <Text style={{ fontSize: 15, fontFamily: F.semiBold, color: '#9CA3AF' }}>No users found</Text>
+          </View>
+        ) : null
+      )}
+    />
+  );
+
   return (
     <View style={{ flex: 1, backgroundColor: '#F5F7FF' }}>
       <StatusBar style="dark" />
       <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
 
-        {/* Header */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, backgroundColor: '#FFFFFF', borderBottomWidth: 1, borderBottomColor: '#EEF2F7' }}>
-          <Pressable onPress={() => router.back()} hitSlop={10}
-            style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: '#F0F4FF', alignItems: 'center', justifyContent: 'center' }}>
-            <ArrowLeft size={18} color="#0078ff" strokeWidth={2} />
+        {/* ── Header ─────────────────────────────────────────────────────── */}
+        <View style={{
+          flexDirection: 'row', alignItems: 'center',
+          paddingHorizontal: 16, paddingVertical: 14,
+          backgroundColor: '#FFFFFF',
+          borderBottomWidth: 1, borderBottomColor: '#EEF2F7',
+          gap: 12,
+        }}>
+          {/* Hamburger */}
+          <Pressable onPress={() => setDrawerOpen(true)} hitSlop={10}
+            style={{ width: 38, height: 38, borderRadius: 10, backgroundColor: '#F0F4FF', alignItems: 'center', justifyContent: 'center' }}>
+            <Menu size={20} color="#0078ff" strokeWidth={2} />
           </Pressable>
-          <Text style={{ flex: 1, textAlign: 'center', fontSize: 17, fontFamily: F.bold, color: '#0D1A3A' }}>Admin Dashboard</Text>
+
+          {/* Section title */}
+          <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <activeNav.icon size={16} color={activeNav.color} strokeWidth={2} />
+            <Text style={{ fontSize: 17, fontFamily: F.bold, color: '#0D1A3A' }}>{activeNav.label}</Text>
+          </View>
+
+          {/* Back + Refresh */}
           <Pressable onPress={() => { fetchStats(); fetchUsers(0, filter, search); }} hitSlop={10}
-            style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: '#F0F4FF', alignItems: 'center', justifyContent: 'center' }}>
+            style={{ width: 38, height: 38, borderRadius: 10, backgroundColor: '#F0F4FF', alignItems: 'center', justifyContent: 'center' }}>
             <RefreshCw size={16} color="#0078ff" strokeWidth={2} />
           </Pressable>
+          <Pressable onPress={() => router.back()} hitSlop={10}
+            style={{ width: 38, height: 38, borderRadius: 10, backgroundColor: '#F0F4FF', alignItems: 'center', justifyContent: 'center' }}>
+            <ArrowLeft size={18} color="#0078ff" strokeWidth={2} />
+          </Pressable>
         </View>
 
-        {/* Tab toggle */}
-        <View style={{ flexDirection: 'row', marginHorizontal: 16, marginVertical: 12, backgroundColor: '#F0F4FF', borderRadius: 12, padding: 4 }}>
-          {(['users', 'legal'] as const).map((tab) => (
-            <Pressable key={tab} onPress={() => setActiveTab(tab)}
-              style={{ flex: 1, paddingVertical: 9, borderRadius: 9, alignItems: 'center', backgroundColor: activeTab === tab ? '#0078ff' : 'transparent' }}>
-              <Text style={{ fontSize: 13, fontFamily: F.bold, color: activeTab === tab ? '#FFFFFF' : '#6B7280', textTransform: 'capitalize' }}>
-                {tab === 'users' ? 'Users' : 'Legal'}
+        {/* ── Section content ─────────────────────────────────────────────── */}
+        <View style={{ flex: 1 }}>
+          {activeSection === 'dashboard' && <DashboardSection />}
+          {activeSection === 'users'     && <UsersSection />}
+          {activeSection === 'legal'     && (
+            <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
+              <Text style={{ fontSize: 12, fontFamily: F.bold, color: '#9CA3AF', letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 12 }}>
+                Legal Content Editor
               </Text>
-            </Pressable>
-          ))}
+              <LegalEditor />
+            </ScrollView>
+          )}
         </View>
 
-        {/* Legal tab */}
-        {activeTab === 'legal' && (
-          <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
-            <Text style={{ fontSize: 12, fontFamily: F.bold, color: '#111827', letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 12 }}>
-              Legal Content Editor
-            </Text>
-            <LegalEditor />
-          </ScrollView>
-        )}
+        {/* ── Hamburger Drawer ────────────────────────────────────────────── */}
+        <Modal visible={drawerOpen} transparent animationType="none" onRequestClose={() => setDrawerOpen(false)}>
+          <View style={{ flex: 1, flexDirection: 'row' }}>
+            {/* Drawer panel */}
+            <View style={{
+              width: Math.min(width * 0.78, 300),
+              backgroundColor: '#FFFFFF',
+              paddingTop: 56, paddingBottom: 40,
+              shadowColor: '#000', shadowOffset: { width: 4, height: 0 }, shadowOpacity: 0.12, shadowRadius: 16,
+            }}>
+              {/* Drawer header */}
+              <View style={{ paddingHorizontal: 20, marginBottom: 24 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <Text style={{ fontSize: 20, fontFamily: F.extraBold, color: '#0D1A3A' }}>Admin Panel</Text>
+                  <Pressable onPress={() => setDrawerOpen(false)} hitSlop={12}
+                    style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center' }}>
+                    <X size={16} color="#6B7280" strokeWidth={2} />
+                  </Pressable>
+                </View>
+                <Text style={{ fontSize: 13, fontFamily: F.regular, color: '#9CA3AF' }}>{adminName}</Text>
+              </View>
 
-        {/* Users tab */}
-        {activeTab === 'users' && (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flex: 1 }}>
-            <View style={{ minWidth: 660 }}>
-              <FlatList
-                data={users}
-                keyExtractor={(u) => u.id}
-                contentInsetAdjustmentBehavior="automatic"
-                onEndReached={handleLoadMore}
-                onEndReachedThreshold={0.5}
-                showsVerticalScrollIndicator={false}
-                ListHeaderComponent={() => (
-                  <View style={{ paddingHorizontal: 16, paddingTop: 16, gap: 12 }}>
-                    {/* Stats grid */}
-                    <View style={{ gap: 8 }}>
-                      <View style={{ flexDirection: 'row', gap: 8 }}>
-                        <StatCard icon={Clock}      label="Trial Users"  value={stats.trial}   color="#D48B2F" onPress={() => handleFilterChange('trial')}   active={filter === 'trial'} />
-                        <StatCard icon={BadgeCheck} label="Paid Users"   value={stats.premium} color="#1E8A3C" onPress={() => handleFilterChange('premium')} active={filter === 'premium'} />
-                      </View>
-                      <View style={{ flexDirection: 'row', gap: 8 }}>
-                        <StatCard icon={XCircle} label="Expired"  value={stats.expired} color="#E53E3E" onPress={() => handleFilterChange('expired')} active={filter === 'expired'} />
-                        <StatCard icon={Users}   label="No Plan"  value={stats.none}    color="#9CA3AF" onPress={() => handleFilterChange('none')}    active={filter === 'none'} />
-                      </View>
-                      <View style={{ flexDirection: 'row', gap: 8 }}>
-                        <StatCard icon={Calendar}   label="Monthly Subs" value={stats.monthly} color="#3B6FF0" />
-                        <StatCard icon={CreditCard} label="Yearly Subs"  value={stats.yearly}  color="#6558F5" />
-                      </View>
-                      <View style={{ flexDirection: 'row', gap: 8 }}>
-                        <StatCard icon={CreditCard} label="Monthly Rev." value={`₹${stats.revenue_monthly.toLocaleString('en-IN')}`} color="#0EA5E9" />
-                        <StatCard icon={CreditCard} label="Yearly Rev."  value={`₹${stats.revenue_yearly.toLocaleString('en-IN')}`}  color="#8B5CF6" />
-                      </View>
-                      <View style={{ backgroundColor: '#EEF4FF', borderRadius: 14, padding: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderColor: '#C7D9FF' }}>
-                        <Text style={{ fontSize: 14, fontFamily: F.bold, color: '#111827' }}>Total Revenue (Razorpay)</Text>
-                        <Text style={{ fontSize: 20, fontFamily: F.extraBold, color: '#0078ff' }}>
-                          ₹{(stats.revenue_monthly + stats.revenue_yearly).toLocaleString('en-IN')}
-                        </Text>
-                      </View>
-                    </View>
+              <View style={{ height: 1, backgroundColor: '#F3F4F6', marginBottom: 16 }} />
 
-                    {/* Total */}
-                    <View style={{ backgroundColor: '#FFFFFF', borderRadius: 14, padding: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderColor: '#EEF2F7' }}>
-                      <Text style={{ fontSize: 14, fontFamily: F.bold, color: '#111827' }}>Total Users</Text>
-                      <Text style={{ fontSize: 22, fontFamily: F.extraBold, color: '#0078ff' }}>{total}</Text>
-                    </View>
-
-                    {/* Search */}
-                    <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB', paddingHorizontal: 12, gap: 8 }}>
-                      <Search size={15} color="#9CA3AF" strokeWidth={2} />
-                      <TextInput
-                        value={search} onChangeText={handleSearch}
-                        placeholder="Search by name, phone, email..."
-                        placeholderTextColor="#C4CCDF"
-                        style={{ flex: 1, fontSize: 14, fontFamily: F.regular, color: '#111827', paddingVertical: 12 }}
-                      />
-                    </View>
-
-                    {/* Filter chips */}
-                    <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
-                      {FILTERS.map(({ key, label }) => (
-                        <Pressable key={key} onPress={() => handleFilterChange(key)}
-                          style={{ paddingHorizontal: 14, paddingVertical: 7, borderRadius: 999, backgroundColor: filter === key ? '#0078ff' : '#FFFFFF', borderWidth: 1, borderColor: filter === key ? '#0078ff' : '#E5E7EB' }}>
-                          <Text style={{ fontSize: 12, fontFamily: F.bold, color: filter === key ? '#FFFFFF' : '#6B7280' }}>{label}</Text>
-                        </Pressable>
-                      ))}
-                    </View>
-
-                    <Text style={{ fontSize: 12, fontFamily: F.bold, color: '#111827', letterSpacing: 0.8, textTransform: 'uppercase' }}>
-                      {users.length} of {total} Users
-                    </Text>
-
-                    {/* Table column headers — added Actions column */}
-                    <View style={{ flexDirection: 'row', backgroundColor: '#F0F4FF', borderRadius: 10, paddingVertical: 9, paddingHorizontal: 10 }}>
-                      <Text style={{ width: 120, fontSize: 11, fontFamily: F.bold, color: '#111827', letterSpacing: 0.5, textTransform: 'uppercase' }}>User</Text>
-                      <Text style={{ width: 110, fontSize: 11, fontFamily: F.bold, color: '#111827', letterSpacing: 0.5, textTransform: 'uppercase' }}>Contact</Text>
-                      <Text style={{ width: 100, fontSize: 11, fontFamily: F.bold, color: '#111827', letterSpacing: 0.5, textTransform: 'uppercase' }}>Bar No.</Text>
-                      <Text style={{ width: 80,  fontSize: 11, fontFamily: F.bold, color: '#111827', letterSpacing: 0.5, textTransform: 'uppercase', textAlign: 'center' }}>Plan</Text>
-                      <Text style={{ width: 56,  fontSize: 11, fontFamily: F.bold, color: '#111827', letterSpacing: 0.5, textTransform: 'uppercase', textAlign: 'center' }}>Cases</Text>
-                      <Text style={{ width: 90,  fontSize: 11, fontFamily: F.bold, color: '#111827', letterSpacing: 0.5, textTransform: 'uppercase', textAlign: 'right' }}>Expires</Text>
-                      <Text style={{ width: 80,  fontSize: 11, fontFamily: F.bold, color: '#111827', letterSpacing: 0.5, textTransform: 'uppercase', textAlign: 'center' }}>Actions</Text>
-                    </View>
-                  </View>
-                )}
-                renderItem={({ item, index }) => {
-                  const s = STATUS_COLORS[item.subscription_status ?? 'none'] ?? STATUS_COLORS.none;
-                  // Plan badge shows subscription STATUS (Premium/Trial/Expired/None), not plan type
-                  const statusLabel = s.label;
-                  const expiry = item.subscription_end_date
-                    ? dayjs(item.subscription_end_date).format('DD MMM YY')
-                    : '—';
-                  const isEven = index % 2 === 0;
+              {/* Nav items */}
+              <View style={{ paddingHorizontal: 12, gap: 4 }}>
+                {NAV_ITEMS.map(({ key, label, icon: Icon, color }) => {
+                  const isActive = activeSection === key;
                   return (
-                    <View style={{
-                      flexDirection: 'row', alignItems: 'center',
-                      paddingVertical: 10, paddingHorizontal: 10,
-                      marginHorizontal: 16, marginTop: 4,
-                      backgroundColor: isEven ? '#FFFFFF' : '#F8FAFF',
-                      borderRadius: 10, borderWidth: 1, borderColor: '#EEF2F7',
-                    }}>
-                      {/* User */}
-                      <View style={{ width: 120, flexDirection: 'row', alignItems: 'center', gap: 7 }}>
-                        <View style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: '#EEF4FF', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                          <Text style={{ fontSize: 13, fontFamily: F.bold, color: '#0078ff' }}>
-                            {(item.full_name ?? item.email ?? '?').charAt(0).toUpperCase()}
-                          </Text>
-                        </View>
-                        <Text style={{ flex: 1, fontSize: 12, fontFamily: F.bold, color: '#0D1A3A' }} numberOfLines={2}>{item.full_name ?? 'Unknown'}</Text>
+                    <Pressable key={key} onPress={() => navigateTo(key)}
+                      style={{
+                        flexDirection: 'row', alignItems: 'center', gap: 14,
+                        paddingHorizontal: 16, paddingVertical: 14,
+                        borderRadius: 12,
+                        backgroundColor: isActive ? color + '18' : 'transparent',
+                        borderWidth: isActive ? 1 : 0,
+                        borderColor: isActive ? color + '40' : 'transparent',
+                      }}>
+                      <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: isActive ? color + '22' : '#F3F4F6', alignItems: 'center', justifyContent: 'center' }}>
+                        <Icon size={18} color={isActive ? color : '#9CA3AF'} strokeWidth={2} />
                       </View>
-                      {/* Contact */}
-                      <Text style={{ width: 110, fontSize: 11, fontFamily: F.regular, color: '#374151' }} numberOfLines={1}>
-                        {item.phone_number ? `+91 ${item.phone_number}` : (item.email ?? '—')}
+                      <Text style={{ flex: 1, fontSize: 15, fontFamily: isActive ? F.bold : F.semiBold, color: isActive ? color : '#374151' }}>
+                        {label}
                       </Text>
-                      {/* Bar No. */}
-                      <Text style={{ width: 100, fontSize: 11, fontFamily: F.regular, color: '#374151' }} numberOfLines={1}>
-                        {item.bar_registration_number ?? '—'}
-                      </Text>
-                      {/* Plan — shows subscription status: Premium / Trial / Expired / None */}
-                      <View style={{ width: 80, alignItems: 'center' }}>
-                        <View style={{ backgroundColor: s.bg, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 }}>
-                          <Text style={{ fontSize: 10, fontFamily: F.bold, color: s.text }}>{statusLabel}</Text>
-                        </View>
-                      </View>
-                      {/* Cases — numeric count */}
-                      <Text style={{ width: 56, fontSize: 13, fontFamily: F.bold, color: '#111827', textAlign: 'center' }}>
-                        {item.case_count}
-                      </Text>
-                      {/* Expires */}
-                      <Text style={{ width: 90, fontSize: 11, fontFamily: F.semiBold, color: '#374151', textAlign: 'right' }} numberOfLines={1}>
-                        {expiry}
-                      </Text>
-                      {/* Actions — ⓘ Info + Extend Plan */}
-                      <View style={{ width: 80, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                        <Pressable onPress={() => setDetailId(item.id)} hitSlop={6}
-                          style={{ width: 30, height: 30, borderRadius: 8, backgroundColor: '#EEF4FF', alignItems: 'center', justifyContent: 'center' }}>
-                          <Info size={14} color="#0078ff" strokeWidth={2} />
-                        </Pressable>
-                        <Pressable onPress={() => setExtendUser(item)} hitSlop={6}
-                          style={{ width: 30, height: 30, borderRadius: 8, backgroundColor: '#E8F5E9', alignItems: 'center', justifyContent: 'center' }}>
-                          <CalendarPlus size={14} color="#1E8A3C" strokeWidth={2} />
-                        </Pressable>
-                      </View>
-                    </View>
+                      {isActive && (
+                        <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: color }} />
+                      )}
+                    </Pressable>
                   );
-                }}
-                ListFooterComponent={() => (
-                  loading ? <ActivityIndicator style={{ marginVertical: 20 }} color="#0078ff" /> : null
-                )}
-                ListEmptyComponent={() => (
-                  !loading ? (
-                    <View style={{ alignItems: 'center', paddingTop: 48, gap: 8 }}>
-                      <Users size={40} color="#D1D5DB" strokeWidth={1.5} />
-                      <Text style={{ fontSize: 15, fontFamily: F.semiBold, color: '#9CA3AF' }}>No users found</Text>
-                    </View>
-                  ) : null
-                )}
-              />
+                })}
+              </View>
             </View>
-          </ScrollView>
-        )}
 
-        {/* Extend Plan Modal */}
+            {/* Backdrop — tap to close */}
+            <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' }} onPress={() => setDrawerOpen(false)} />
+          </View>
+        </Modal>
+
+        {/* ── Extend Plan Modal ───────────────────────────────────────────── */}
         <ExtendPlanModal
           visible={!!extendUser}
           user={extendUser}
@@ -813,7 +922,7 @@ export default function AdminScreen() {
           onSuccess={handleExtendSuccess}
         />
 
-        {/* User Detail Modal */}
+        {/* ── User Detail Modal ───────────────────────────────────────────── */}
         <UserDetailModal
           visible={!!detailUserId}
           userId={detailUserId}
