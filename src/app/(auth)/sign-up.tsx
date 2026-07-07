@@ -3,71 +3,88 @@ import {
   View, Text, TextInput, Pressable, ScrollView,
   KeyboardAvoidingView, ActivityIndicator,
 } from 'react-native';
+import Animated, {
+  useSharedValue, useAnimatedStyle,
+  withSpring, withTiming, withSequence, withDelay,
+  runOnJS,
+} from 'react-native-reanimated';
 import { Image } from 'expo-image';
 import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ChevronDown, ChevronLeft } from 'lucide-react-native';
+import { ChevronDown, ChevronLeft, CheckCircle2 } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase, fnClient } from '@/client/supabase';
 import { INDIA_CITIES } from '@/types/types';
 import { F } from '@/lib/fonts';
 import { NEW_USER_KEY } from '@/app/_layout';
+import { OtpInput } from '@/components/OtpInput';
 
 const LOGO_URL = 'https://miaoda-conversation-file.s3cdn.medo.dev/user-c90ar68ml4hs/app-c90by552ew3l/20260628/Homelogo.png';
+const LOCK_ICON_URL = 'https://miaoda-conversation-file.s3cdn.medo.dev/user-c90ar68ml4hs/app-c90by552ew3l/20260612/password-protection.png';
 
 /** Set before setSession so root layout knows to route to premium-onboarding */
 const NEW_USER_KEY_LOCAL = 'advocal_new_user_pending'; // kept for legacy; use imported NEW_USER_KEY
 
-/** Call a Supabase Edge Function via the dedicated functions client. */
+// ── Success overlay ───────────────────────────────────────────────────────────
+function SuccessOverlay({ visible }: { visible: boolean }) {
+  const scale   = useSharedValue(0.4);
+  const opacity = useSharedValue(0);
+  const ring1   = useSharedValue(0.8);
+  const ring2   = useSharedValue(0.8);
+
+  useEffect(() => {
+    if (visible) {
+      opacity.value = withTiming(1, { duration: 200 });
+      scale.value   = withSpring(1, { damping: 14, stiffness: 160 });
+      ring1.value   = withDelay(150, withSpring(1.4, { damping: 10 }));
+      ring2.value   = withDelay(250, withSpring(1.8, { damping: 10 }));
+    }
+  }, [visible, opacity, scale, ring1, ring2]);
+
+  const iconStyle = useAnimatedStyle(() => ({
+    opacity:   opacity.value,
+    transform: [{ scale: scale.value }],
+  }));
+  const ring1Style = useAnimatedStyle(() => ({
+    opacity:   withTiming(visible ? 0.15 : 0, { duration: 300 }),
+    transform: [{ scale: ring1.value }],
+  }));
+  const ring2Style = useAnimatedStyle(() => ({
+    opacity:   withTiming(visible ? 0.08 : 0, { duration: 400 }),
+    transform: [{ scale: ring2.value }],
+  }));
+  const bgStyle = useAnimatedStyle(() => ({
+    opacity: withTiming(visible ? 1 : 0, { duration: 250 }),
+  }));
+
+  if (!visible) return null;
+  return (
+    <Animated.View style={[bgStyle, {
+      position: 'absolute', inset: 0,
+      backgroundColor: '#ffffff',
+      alignItems: 'center', justifyContent: 'center', zIndex: 99,
+    }]}>
+      <Animated.View style={[ring2Style, { position: 'absolute', width: 200, height: 200, borderRadius: 100, backgroundColor: '#0078ff' }]} />
+      <Animated.View style={[ring1Style, { position: 'absolute', width: 160, height: 160, borderRadius: 80, backgroundColor: '#0078ff' }]} />
+      <Animated.View style={[iconStyle, {
+        width: 100, height: 100, borderRadius: 50, backgroundColor: '#0078ff',
+        alignItems: 'center', justifyContent: 'center',
+        boxShadow: [{ offsetX: 0, offsetY: 8, blurRadius: 32, color: 'rgba(0,120,255,0.35)' }],
+      } as any]}>
+        <CheckCircle2 size={52} color="#ffffff" strokeWidth={2.5} />
+      </Animated.View>
+      <Animated.View style={[iconStyle, { marginTop: 28, alignItems: 'center', gap: 6 }]}>
+        <Text style={{ fontSize: 22, fontFamily: F.extraBold, color: '#111827', letterSpacing: -0.3 }}>Verified!</Text>
+        <Text style={{ fontSize: 13, fontFamily: F.semiBold, color: '#6b7280' }}>Setting up your account…</Text>
+      </Animated.View>
+    </Animated.View>
+  );
+}
 async function callFn(name: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
   const { data, error } = await fnClient.functions.invoke(name, { body });
   if (error) throw error;
   return (data ?? {}) as Record<string, unknown>;
-}
-
-function OtpInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  const hiddenRef = useRef<TextInput>(null);
-  const digits = value.split('').concat(Array(6).fill('')).slice(0, 6);
-
-  const handleHiddenChange = (text: string) => {
-    const clean = text.replace(/\D/g, '').slice(0, 6);
-    onChange(clean);
-    if (clean.length === 6) hiddenRef.current?.blur();
-  };
-
-  return (
-    <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 4, marginVertical: 8 }}>
-      {/* Hidden input captures SMS auto-fill (iOS oneTimeCode + Android sms-otp) */}
-      <TextInput
-        ref={hiddenRef}
-        value={value}
-        onChangeText={handleHiddenChange}
-        keyboardType="number-pad"
-        textContentType="oneTimeCode"
-        autoComplete="sms-otp"
-        autoFocus
-        maxLength={6}
-        style={{ position: 'absolute', opacity: 0, width: 1, height: 1 }}
-      />
-      {/* Visual digit boxes — tap any to focus hidden input */}
-      {digits.map((d, i) => (
-        <Pressable
-          key={i}
-          onPress={() => hiddenRef.current?.focus()}
-          style={{
-            flex: 1, minWidth: 0, height: 52,
-            borderRadius: 12, borderWidth: 1.5,
-            borderColor: d ? '#0078ff' : (i === value.length ? '#0078ff' : '#c2c6d5'),
-            backgroundColor: d ? '#eef3fb' : '#f8f9fa',
-            alignItems: 'center', justifyContent: 'center',
-          }}
-        >
-          <Text style={{ fontSize: 20, fontFamily: F.bold, color: '#171c20' }}>{d}</Text>
-        </Pressable>
-      ))}
-    </View>
-  );
 }
 
 export default function SignUp() {
@@ -82,6 +99,7 @@ export default function SignUp() {
   const [sessionId, setSessionId]     = useState('');
   const [otp, setOtp]                 = useState('');
   const [resendTimer, setResendTimer] = useState(0);
+  const [showSuccess, setShowSuccess] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Pending session tokens (held until profile step completes)
@@ -99,14 +117,23 @@ export default function SignUp() {
   const [cityQuery, setCityQuery] = useState('');
 
   // Shared
-  const [error,    setError]    = useState('');
-  const [sending,  setSending]  = useState(false);
+  const [error,     setError]     = useState('');
+  const [sending,   setSending]   = useState(false);
   const [verifying, setVerifying] = useState(false);
-  const [saving,   setSaving]   = useState(false);
-  const [sendOtpPressed,   setSendOtpPressed]   = useState(false);
-  const [verifyOtpPressed, setVerifyOtpPressed] = useState(false);
-  const [finishPressed,    setFinishPressed]    = useState(false);
-  const [backOtpPressed,   setBackOtpPressed]   = useState(false);
+  const [saving,    setSaving]    = useState(false);
+  const [sendOtpPressed, setSendOtpPressed] = useState(false);
+  const [finishPressed,  setFinishPressed]  = useState(false);
+
+  // Shake animation for OTP error
+  const shakeX = useSharedValue(0);
+  const shakeStyle = useAnimatedStyle(() => ({ transform: [{ translateX: shakeX.value }] }));
+  const triggerShake = () => {
+    shakeX.value = withSequence(
+      withTiming(-10, { duration: 60 }), withTiming(10, { duration: 60 }),
+      withTiming(-8,  { duration: 55 }),  withTiming(8,  { duration: 55 }),
+      withTiming(-4,  { duration: 50 }),  withTiming(0,  { duration: 50 }),
+    );
+  };
 
   useEffect(() => {
     if (resendTimer > 0) {
@@ -131,6 +158,8 @@ export default function SignUp() {
     finally { setSending(false); }
   };
 
+  const goToProfile = () => setStep('profile');
+
   const verifyOtp = async () => {
     if (otp.length !== 6) return;
     const digits = phone.replace(/\D/g, '');
@@ -140,18 +169,18 @@ export default function SignUp() {
         sessionId, otp, phone: digits, flow: 'signup',
         profileData: { full_name: name.trim() },
       });
-      if (data.error) { setError(String(data.error)); }
+      if (data.error) { setError(String(data.error)); triggerShake(); }
       else if (data.access_token) {
-        // Store tokens — DON'T set session yet (would trigger root layout redirect)
-        // Profile setup step first, then authenticate
         setPendingAccess(String(data.access_token));
         setPendingRefresh(String(data.refresh_token ?? ''));
         if (data.user && typeof data.user === 'object' && 'id' in data.user) {
           setPendingUserId(String((data.user as { id: string }).id));
         }
-        setStep('profile');
-      } else { setError('Verification failed. Please try again.'); }
-    } catch { setError('Could not reach server. Check your internet and try again.'); }
+        // Show success animation, then go to profile step
+        setShowSuccess(true);
+        setTimeout(() => runOnJS(goToProfile)(), 1600);
+      } else { setError('Verification failed. Please try again.'); triggerShake(); }
+    } catch { setError('Could not reach server. Check your internet and try again.'); triggerShake(); }
     finally { setVerifying(false); }
   };
 
@@ -162,62 +191,43 @@ export default function SignUp() {
   const [cityErr,    setCityErr]    = useState('');
 
   const finishProfile = async () => {
-    // Per-field validation
     let valid = true;
-    if (!name.trim())    { setNameErr('Full name is required.');         valid = false; } else { setNameErr(''); }
-    if (!address.trim()) { setAddressErr('Address is required.');        valid = false; } else { setAddressErr(''); }
-    if (!city)           { setCityErr('City is required.');              valid = false; } else { setCityErr(''); }
-    const dobTrimmed = dob.trim();    const dobIso = (() => {
+    if (!name.trim())    { setNameErr('Full name is required.');  valid = false; } else { setNameErr(''); }
+    if (!address.trim()) { setAddressErr('Address is required.'); valid = false; } else { setAddressErr(''); }
+    if (!city)           { setCityErr('City is required.');       valid = false; } else { setCityErr(''); }
+    const dobTrimmed = dob.trim();
+    const dobIso = (() => {
       const dmyMatch = dobTrimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
       if (dmyMatch) return `${dmyMatch[3]}-${dmyMatch[2].padStart(2,'0')}-${dmyMatch[1].padStart(2,'0')}`;
       const isoMatch = dobTrimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/);
       if (isoMatch) return dobTrimmed;
       return null;
     })();
-    if (!dobTrimmed)  { setDobErr('Date of birth is required.');         valid = false; }
-    else if (!dobIso) { setDobErr('Enter date as DD/MM/YYYY.');          valid = false; }
+    if (!dobTrimmed)  { setDobErr('Date of birth is required.'); valid = false; }
+    else if (!dobIso) { setDobErr('Enter date as DD/MM/YYYY.');  valid = false; }
     else              { setDobErr(''); }
     if (!valid) return;
 
-    setSaving(true);
-    setError('');
+    setSaving(true); setError('');
     try {
-      // Store profile data so premium-onboarding can save it on "Start Free Trial"
       await AsyncStorage.setItem('advocal_pending_profile_data', JSON.stringify({
-        full_name:               name.trim() || null,
-        company_name:            company.trim() || null,
-        bar_registration_number: barId.trim() || null,
-        city:                    city || null,
-        address:                 address.trim() || null,
-        date_of_birth:           dobIso || null,
-        userId:                  pendingUserId,
+        full_name: name.trim() || null, company_name: company.trim() || null,
+        bar_registration_number: barId.trim() || null, city: city || null,
+        address: address.trim() || null, date_of_birth: dobIso || null,
+        userId: pendingUserId,
       }));
-
-      // Mark as new user BEFORE setting session (root layout reads this)
       await AsyncStorage.setItem(NEW_USER_KEY, 'true');
-
-      // Authenticate — triggers ctx onAuthStateChange → root layout → premium-onboarding
-      // Profile is NOT saved yet; it will be saved when user taps "Start Free Trial"
-      await supabase.auth.setSession({
-        access_token: pendingAccess,
-        refresh_token: pendingRefresh,
-      });
-      // Root layout will see NEW_USER_KEY and navigate to premium-onboarding
+      await supabase.auth.setSession({ access_token: pendingAccess, refresh_token: pendingRefresh });
     } catch { setError('Could not save profile. Please try again.'); setSaving(false); }
-    // No finally navigation — root layout handles it
   };
 
-  /** Auto-insert slashes as user types DD/MM/YYYY */
   const handleDobChange = (raw: string) => {
-    // Strip anything that isn't a digit or slash
     const stripped = raw.replace(/[^\d/]/g, '');
-    // Remove all slashes then re-insert at correct positions
-    const digits = stripped.replace(/\//g, '');
-    let formatted = digits;
-    if (digits.length > 2)  formatted = digits.slice(0, 2) + '/' + digits.slice(2);
-    if (digits.length > 4)  formatted = digits.slice(0, 2) + '/' + digits.slice(2, 4) + '/' + digits.slice(4, 8);
-    setDob(formatted);
-    setDobErr('');
+    const digits   = stripped.replace(/\//g, '');
+    let formatted  = digits;
+    if (digits.length > 2) formatted = digits.slice(0, 2) + '/' + digits.slice(2);
+    if (digits.length > 4) formatted = digits.slice(0, 2) + '/' + digits.slice(2, 4) + '/' + digits.slice(4, 8);
+    setDob(formatted); setDobErr('');
   };
 
   const resend = async () => {
@@ -226,12 +236,9 @@ export default function SignUp() {
     await sendOtp();
   };
 
-  // ── City picker ─────────────────────────────────────────────────────────────
-  const filteredCities = INDIA_CITIES.filter((c) =>
-    c.toLowerCase().includes(cityQuery.toLowerCase())
-  );
+  const filteredCities = INDIA_CITIES.filter((c) => c.toLowerCase().includes(cityQuery.toLowerCase()));
 
-  // ── Step 1: Phone + Name ─────────────────────────────────────────────────
+  // ── Step 1: Phone + Name ──────────────────────────────────────────────────
   if (step === 'phone') {
     return (
       <View style={{ flex: 1, backgroundColor: '#ffffff' }}>
@@ -239,49 +246,33 @@ export default function SignUp() {
         <KeyboardAvoidingView behavior={process.env.EXPO_OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
           <ScrollView contentContainerStyle={{ flexGrow: 1 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
             <View style={{ flex: 1, justifyContent: 'center', paddingHorizontal: 24, paddingVertical: 40 }}>
-
               <View style={{ alignItems: 'center', marginBottom: 36 }}>
-                <Image
-                  source={{ uri: LOGO_URL }}
-                  style={{
-                    width: 112, height: 112, borderRadius: 26,
-                    marginBottom: 24,
-                    boxShadow: [{ offsetX: 0, offsetY: 4, blurRadius: 18, color: 'rgba(0,120,255,0.18)' }],
-                  } as any}
-                  contentFit="fill"
-                  cachePolicy="memory-disk"
-                />
+                <Image source={{ uri: LOGO_URL }}
+                  style={{ width: 112, height: 112, borderRadius: 26, marginBottom: 24, boxShadow: [{ offsetX: 0, offsetY: 4, blurRadius: 18, color: 'rgba(0,120,255,0.18)' }] } as any}
+                  contentFit="fill" cachePolicy="memory-disk" />
                 <Text style={{ fontSize: 22, fontFamily: F.extraBold, color: '#171c20', letterSpacing: -0.3, textAlign: 'center', marginBottom: 6 }}>Create Account</Text>
                 <Text style={{ fontSize: 13, fontFamily: F.semiBold, color: '#424753', textAlign: 'center', lineHeight: 19 }}>Sign up with your mobile number.</Text>
               </View>
-
               <View style={{ backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#e0e4ec', boxShadow: [{ offsetX: 0, offsetY: 2, blurRadius: 12, color: 'rgba(0,0,0,0.07)' }], padding: 20, borderRadius: 16, marginBottom: 20 } as any}>
                 <FieldLabel label="Full Name" />
                 <FieldInput value={name} onChangeText={(v) => { setName(v); setError(''); }} placeholder="Enter your full name" autoCapitalize="words" returnKeyType="next" />
-
                 <FieldLabel label="Mobile Number" />
                 <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#ffffff', borderRadius: 12, borderWidth: 1, borderColor: '#c2c6d5', height: 56, paddingHorizontal: 14 }}>
                   <Image source={{ uri: 'https://flagcdn.com/w40/in.png' }} style={{ width: 24, height: 16, borderRadius: 2, marginRight: 6 }} contentFit="cover" cachePolicy="memory-disk" />
                   <Text style={{ fontSize: 15, fontFamily: F.semiBold, color: '#171c20', marginRight: 8 }}>+91</Text>
                   <View style={{ width: 1, height: 22, backgroundColor: '#c2c6d5', marginRight: 10 }} />
-                  <TextInput
-                    value={phone}
-                    onChangeText={(v) => { setPhone(v.replace(/\D/g, '').slice(0, 10)); setError(''); }}
+                  <TextInput value={phone} onChangeText={(v) => { setPhone(v.replace(/\D/g, '').slice(0, 10)); setError(''); }}
                     placeholder="Enter mobile number" placeholderTextColor="#a0a8b4"
                     keyboardType="phone-pad" maxLength={10} returnKeyType="done" onSubmitEditing={sendOtp}
-                    style={{ flex: 1, fontSize: 15, fontFamily: F.semiBold, color: '#171c20', outlineWidth: 0 } as any}
-                  />
+                    style={{ flex: 1, fontSize: 15, fontFamily: F.semiBold, color: '#171c20', outlineWidth: 0 } as any} />
                 </View>
-
                 {!!error && <Text style={{ color: '#ba1a1a', fontSize: 12, fontFamily: F.medium, marginTop: 8 }}>{error}</Text>}
-
-                <Pressable onPress={sendOtp} disabled={sending} 
+                <Pressable onPress={sendOtp} disabled={sending}
                   onPressIn={() => setSendOtpPressed(true)} onPressOut={() => setSendOtpPressed(false)}
-                  style={{ marginTop: 16, borderRadius: 10, height: 44, alignItems: 'center', justifyContent: 'center', backgroundColor: '#0078ff', opacity: sendOtpPressed || sending ? 0.88 : 1 }}>
-                  <Text style={{ color: '#ffffff', fontSize: 13, fontFamily: F.bold }}>{sending ? 'Sending OTP…' : 'Send OTP'}</Text>
+                  style={{ marginTop: 16, borderRadius: 10, height: 48, alignItems: 'center', justifyContent: 'center', backgroundColor: '#0078ff', opacity: sendOtpPressed || sending ? 0.88 : 1 }}>
+                  {sending ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#ffffff', fontSize: 14, fontFamily: F.bold }}>Send OTP</Text>}
                 </Pressable>
               </View>
-
               <View style={{ alignItems: 'center' }}>
                 <Text style={{ fontSize: 14, fontFamily: F.regular, color: '#424753' }}>
                   Already have an account?{' '}
@@ -300,65 +291,70 @@ export default function SignUp() {
     return (
       <View style={{ flex: 1, backgroundColor: '#ffffff' }}>
         <StatusBar style="dark" />
+        {/* Success overlay */}
+        <SuccessOverlay visible={showSuccess} />
+
         <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
-          {/* Back button header */}
-          <View style={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4 }}>
-            <Pressable
-              onPress={() => { setStep('phone'); setOtp(''); setError(''); }}
-              onPressIn={() => setBackOtpPressed(true)}
-              onPressOut={() => setBackOtpPressed(false)}
-              style={{
-                flexDirection: 'row', alignItems: 'center', gap: 6,
-                alignSelf: 'flex-start',
-                backgroundColor: backOtpPressed ? '#0060cc' : '#0078ff',
-                borderRadius: 10, paddingHorizontal: 14, paddingVertical: 9,
-              }}
-            >
-              <ChevronLeft size={16} color="#ffffff" strokeWidth={2.5} />
-              <Text style={{ fontSize: 13, fontFamily: F.bold, color: '#ffffff', letterSpacing: 0.2 }}>Back</Text>
-            </Pressable>
-          </View>
-
           <KeyboardAvoidingView behavior={process.env.EXPO_OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-            <ScrollView
-              contentContainerStyle={{ flexGrow: 1 }}
-              keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={false}
-            >
-              <View style={{ flex: 1, justifyContent: 'center', paddingHorizontal: 24, paddingVertical: 24 }}>
+            <ScrollView contentContainerStyle={{ flexGrow: 1 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+              <View style={{ flex: 1, paddingHorizontal: 24, paddingVertical: 32 }}>
 
-                <View style={{ alignItems: 'center', marginBottom: 28 }}>
-                  <View style={{ width: 88, height: 88, borderRadius: 22, backgroundColor: '#ffffff', boxShadow: [{ offsetX: 0, offsetY: 4, blurRadius: 16, color: 'rgba(0,0,0,0.12)' }], alignItems: 'center', justifyContent: 'center', marginBottom: 14 } as any}>
-                    <Image source={{ uri: 'https://miaoda-conversation-file.s3cdn.medo.dev/user-c90ar68ml4hs/app-c90by552ew3l/20260612/password-protection.png' }} style={{ width: 64, height: 64 }} contentFit="contain" cachePolicy="memory-disk" />
+                {/* Back */}
+                <Pressable onPress={() => { setStep('phone'); setOtp(''); setError(''); }}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', marginBottom: 28 }}>
+                  <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: '#f3f4f6', alignItems: 'center', justifyContent: 'center' }}>
+                    <ChevronLeft size={18} color="#374151" strokeWidth={2} />
                   </View>
-                  <Text style={{ fontSize: 22, fontFamily: F.extraBold, color: '#171c20', textAlign: 'center', marginBottom: 8 }}>Verify OTP</Text>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#eef3fb', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 6 }}>
-                    <Image source={{ uri: 'https://flagcdn.com/w40/in.png' }} style={{ width: 18, height: 12, borderRadius: 2 }} contentFit="cover" cachePolicy="memory-disk" />
-                    <Text style={{ fontSize: 13, fontFamily: F.bold, color: '#0078ff' }}>+91 {phone}</Text>
+                  <Text style={{ fontSize: 14, fontFamily: F.semiBold, color: '#374151' }}>Back</Text>
+                </Pressable>
+
+                {/* Icon + title */}
+                <View style={{ alignItems: 'center', marginBottom: 32 }}>
+                  <View style={{ width: 88, height: 88, borderRadius: 22, backgroundColor: '#eff6ff', alignItems: 'center', justifyContent: 'center', marginBottom: 20,
+                    boxShadow: [{ offsetX: 0, offsetY: 4, blurRadius: 20, color: 'rgba(0,120,255,0.14)' }] } as any}>
+                    <Image source={{ uri: LOCK_ICON_URL }} style={{ width: 60, height: 60 }} contentFit="contain" cachePolicy="memory-disk" />
                   </View>
+                  <Text style={{ fontSize: 24, fontFamily: F.extraBold, color: '#111827', letterSpacing: -0.4, marginBottom: 8 }}>Verify Your Number</Text>
+                  <Text style={{ fontSize: 14, fontFamily: F.regular, color: '#6b7280', textAlign: 'center', lineHeight: 21 }}>
+                    We sent a 6-digit code to{'\n'}
+                    <Text style={{ fontFamily: F.bold, color: '#111827' }}>+91 {phone.slice(0, 5)} {phone.slice(5)}</Text>
+                  </Text>
                 </View>
 
-                <View style={{ backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#e0e4ec', boxShadow: [{ offsetX: 0, offsetY: 2, blurRadius: 12, color: 'rgba(0,0,0,0.07)' }], padding: 20, borderRadius: 16, marginBottom: 16 } as any}>
-                  <Text style={{ fontSize: 14, fontFamily: F.regular, color: '#424753', textAlign: 'center', marginBottom: 16 }}>Enter the 6-digit code sent to your mobile</Text>
-                  <OtpInput value={otp} onChange={setOtp} />
-                  {!!error && <Text style={{ color: '#ba1a1a', fontSize: 12, fontFamily: F.medium, marginTop: 8, textAlign: 'center' }}>{error}</Text>}
+                {/* OTP boxes with shake */}
+                <Animated.View style={[shakeStyle, { marginBottom: 8 }]}>
+                  <OtpInput value={otp} onChange={(v) => { setOtp(v); setError(''); }} hasError={!!error} />
+                </Animated.View>
 
-                  <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: 16, gap: 6 }}>
-                    <Text style={{ fontSize: 13, color: '#727785' }}>Didn't receive it?</Text>
-                    <Pressable onPress={resend} disabled={resendTimer > 0}>
-                      {resendTimer > 0
-                        ? <Text style={{ fontSize: 13, fontFamily: F.bold, color: '#727785' }}>Resend in {resendTimer}s</Text>
-                        : <Text style={{ fontSize: 13, fontFamily: F.bold, color: '#0078ff' }}>Resend OTP</Text>}
-                    </Pressable>
+                {/* Error */}
+                {!!error && (
+                  <View style={{ alignItems: 'center', marginTop: 10, marginBottom: 4 }}>
+                    <View style={{ flexDirection: 'row', backgroundColor: '#fef2f2', borderRadius: 8, paddingHorizontal: 14, paddingVertical: 8 }}>
+                      <Text style={{ color: '#dc2626', fontSize: 13, fontFamily: F.medium, textAlign: 'center' }}>{error}</Text>
+                    </View>
                   </View>
+                )}
 
-                  <Pressable onPress={verifyOtp} disabled={otp.length !== 6 || verifying}
-                    onPressIn={() => setVerifyOtpPressed(true)} onPressOut={() => setVerifyOtpPressed(false)}
-                    style={{ marginTop: 16, borderRadius: 10, height: 48, alignItems: 'center', justifyContent: 'center', backgroundColor: otp.length !== 6 ? '#eaeef4' : '#0078ff', opacity: verifyOtpPressed ? 0.88 : 1 }}>
-                    <Text style={{ color: otp.length !== 6 ? '#727785' : '#ffffff', fontSize: 14, fontFamily: F.bold }}>
-                      {verifying ? 'Verifying…' : 'Verify & Continue'}
-                    </Text>
-                  </Pressable>
+                {/* Verify button */}
+                <Pressable onPress={verifyOtp} disabled={otp.length !== 6 || verifying}
+                  style={{ marginTop: 28, borderRadius: 14, height: 52, alignItems: 'center', justifyContent: 'center', backgroundColor: otp.length === 6 ? '#0078ff' : '#e5e7eb' }}>
+                  {verifying
+                    ? <ActivityIndicator color={otp.length === 6 ? '#fff' : '#9ca3af'} />
+                    : <Text style={{ fontSize: 15, fontFamily: F.bold, color: otp.length === 6 ? '#ffffff' : '#9ca3af' }}>Verify & Continue</Text>}
+                </Pressable>
+
+                {/* Resend */}
+                <View style={{ alignItems: 'center', marginTop: 32, gap: 8 }}>
+                  <Text style={{ fontSize: 13, fontFamily: F.regular, color: '#9ca3af' }}>Didn't receive the code?</Text>
+                  {resendTimer > 0 ? (
+                    <View style={{ backgroundColor: '#f3f4f6', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 6 }}>
+                      <Text style={{ fontSize: 13, fontFamily: F.bold, color: '#374151' }}>Resend in {resendTimer}s</Text>
+                    </View>
+                  ) : (
+                    <Pressable onPress={resend} style={{ opacity: 1 }}>
+                      <Text style={{ fontSize: 14, fontFamily: F.bold, color: '#0078ff' }}>Resend Code</Text>
+                    </Pressable>
+                  )}
                 </View>
 
               </View>
