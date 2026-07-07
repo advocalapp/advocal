@@ -1,18 +1,21 @@
 import { useState, useRef, useEffect } from 'react';
-import { ArrowLeft } from 'lucide-react-native';
+import { ArrowLeft, CheckCircle2 } from 'lucide-react-native';
 import {
   View, Text, TextInput, Pressable, ScrollView,
-  KeyboardAvoidingView,
+  KeyboardAvoidingView, ActivityIndicator,
 } from 'react-native';
+import Animated, {
+  useSharedValue, useAnimatedStyle,
+  withSpring, withTiming, withSequence, withDelay,
+  runOnJS,
+} from 'react-native-reanimated';
 import { Image } from 'expo-image';
 import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
 import { supabase, fnClient } from '@/client/supabase';
 import { getProfile, getSubscriptionInfo } from '@/db/api';
 import { F } from '@/lib/fonts';
-
-const LOGO_URL = 'https://miaoda-conversation-file.s3cdn.medo.dev/user-c90ar68ml4hs/app-c90by552ew3l/20260628/Homelogo.png';
-const LOCK_ICON_URL = 'https://miaoda-conversation-file.s3cdn.medo.dev/user-c90ar68ml4hs/app-c90by552ew3l/20260612/password-protection.png';
+import { OtpInput } from '@/components/OtpInput';
 
 /** Fire-and-forget warmup pings via fnClient so both functions are warm. */
 function warmupFunctions() {
@@ -27,112 +30,75 @@ async function callFn(name: string, body: Record<string, unknown>): Promise<Reco
   return (data ?? {}) as Record<string, unknown>;
 }
 
-// ── OTP 6-box input (full-width, square boxes matching screenshot) ────────────
-function OtpBoxes({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  // Must use a single ref-array — calling useRef inside Array.from violates Rules of Hooks
-  const inputRefs = useRef<(TextInput | null)[]>([null, null, null, null, null, null]);
-  const digits = value.split('').concat(Array(6).fill('')).slice(0, 6);
+const LOGO_URL      = 'https://miaoda-conversation-file.s3cdn.medo.dev/user-c90ar68ml4hs/app-c90by552ew3l/20260628/Homelogo.png';
+const LOCK_ICON_URL = 'https://miaoda-conversation-file.s3cdn.medo.dev/user-c90ar68ml4hs/app-c90by552ew3l/20260612/password-protection.png';
 
-  const handleChange = (idx: number, ch: string) => {
-    const clean = ch.replace(/\D/g, '');
-    if (!clean) {
-      const next = [...digits]; next[idx] = '';
-      onChange(next.join(''));
-      if (idx > 0) inputRefs.current[idx - 1]?.focus();
-      return;
+// ── Success overlay (shown after successful verification) ─────────────────────
+function SuccessOverlay({ visible }: { visible: boolean }) {
+  const scale   = useSharedValue(0.4);
+  const opacity = useSharedValue(0);
+  const ring1   = useSharedValue(0.8);
+  const ring2   = useSharedValue(0.8);
+
+  useEffect(() => {
+    if (visible) {
+      opacity.value = withTiming(1, { duration: 200 });
+      scale.value   = withSpring(1, { damping: 14, stiffness: 160 });
+      ring1.value   = withDelay(150, withSpring(1.4, { damping: 10 }));
+      ring2.value   = withDelay(250, withSpring(1.8, { damping: 10 }));
     }
-    const next = [...digits]; next[idx] = clean[clean.length - 1];
-    onChange(next.join(''));
-    if (idx < 5) inputRefs.current[idx + 1]?.focus();
-    else inputRefs.current[idx]?.blur();
-  };
+  }, [visible, opacity, scale, ring1, ring2]);
 
-  const handleKey = (idx: number, key: string) => {
-    if (key === 'Backspace' && !digits[idx] && idx > 0) {
-      const next = [...digits]; next[idx - 1] = '';
-      onChange(next.join(''));
-      inputRefs.current[idx - 1]?.focus();
-    }
-  };
+  const iconStyle = useAnimatedStyle(() => ({
+    opacity:   opacity.value,
+    transform: [{ scale: scale.value }],
+  }));
+  const ring1Style = useAnimatedStyle(() => ({
+    opacity:   withTiming(visible ? 0.15 : 0, { duration: 300 }),
+    transform: [{ scale: ring1.value }],
+  }));
+  const ring2Style = useAnimatedStyle(() => ({
+    opacity:   withTiming(visible ? 0.08 : 0, { duration: 400 }),
+    transform: [{ scale: ring2.value }],
+  }));
+  const bgStyle = useAnimatedStyle(() => ({
+    opacity: withTiming(visible ? 1 : 0, { duration: 250 }),
+  }));
 
+  if (!visible) return null;
   return (
-    <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 4 }}>
-      {digits.map((d, i) => (
-        <TextInput
-          key={i}
-          ref={(r) => { inputRefs.current[i] = r; }}
-          value={d}
-          onChangeText={(ch) => handleChange(i, ch)}
-          onKeyPress={({ nativeEvent }) => handleKey(i, nativeEvent.key)}
-          keyboardType="number-pad" maxLength={1}
-          style={{
-            flex: 1, minWidth: 0, height: 52,
-            borderRadius: 12, borderWidth: 1.5,
-            borderColor: d ? '#0078ff' : '#c2c6d5',
-            backgroundColor: d ? '#eef3fb' : '#f8f9fa',
-            fontSize: 20, fontFamily: F.bold, color: '#171c20',
-            textAlign: 'center',
-          } as any}
-        />
-      ))}
-    </View>
-  );
-}
-
-// ── OTP 6-box input ───────────────────────────────────────────────────────────
-function _OtpInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  const hiddenRef = useRef<TextInput>(null);
-  const digits = value.split('').concat(Array(6).fill('')).slice(0, 6);
-
-  const handleHiddenChange = (text: string) => {
-    const clean = text.replace(/\D/g, '').slice(0, 6);
-    onChange(clean);
-    if (clean.length === 6) hiddenRef.current?.blur();
-  };
-
-  return (
-    <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 10, marginVertical: 8 }}>
-      {/* Hidden input captures SMS auto-fill (iOS oneTimeCode + Android sms-otp) */}
-      <TextInput
-        ref={hiddenRef}
-        value={value}
-        onChangeText={handleHiddenChange}
-        keyboardType="number-pad"
-        textContentType="oneTimeCode"
-        autoComplete="sms-otp"
-        autoFocus
-        maxLength={6}
-        style={{ position: 'absolute', opacity: 0, width: 1, height: 1 }}
-      />
-      {digits.map((d, i) => (
-        <Pressable
-          key={i}
-          onPress={() => hiddenRef.current?.focus()}
-          style={{
-            flex: 1, aspectRatio: 1, borderRadius: 14, borderWidth: 2,
-            borderColor: d ? '#0078ff' : (i === value.length ? '#0078ff' : '#DADCE0'),
-            backgroundColor: d ? '#E8F0FE' : '#F8F9FA',
-            alignItems: 'center', justifyContent: 'center',
-            boxShadow: d ? [{ offsetX: 0, offsetY: 0, blurRadius: 0, spreadDistance: 3, color: 'rgba(0,120,255,0.12)' }] : [],
-          } as any}
-        >
-          <Text style={{ fontSize: 22, fontFamily: F.bold, color: '#202124' }}>{d}</Text>
-        </Pressable>
-      ))}
-    </View>
-  );
-}
-
-// ── Decorative rings (purely visual) ─────────────────────────────────────────
-function _HeroDecorations() {
-  return (
-    <>
-      <View style={{ position: 'absolute', top: -40, right: -50, width: 180, height: 180, borderRadius: 90, borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)' }} />
-      <View style={{ position: 'absolute', top: -20, right: -30, width: 130, height: 130, borderRadius: 65, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' }} />
-      <View style={{ position: 'absolute', bottom: 10, left: -40, width: 120, height: 120, borderRadius: 60, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' }} />
-      <View style={{ position: 'absolute', top: 30, left: 24, width: 6, height: 6, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.15)' }} />
-      <View style={{ position: 'absolute', bottom: 40, right: 36, width: 4, height: 4, borderRadius: 2, backgroundColor: 'rgba(0,120,255,0.4)' }} />
-    </>
+    <Animated.View style={[bgStyle, {
+      position: 'absolute', inset: 0,
+      backgroundColor: '#ffffff',
+      alignItems: 'center', justifyContent: 'center', zIndex: 99,
+    }]}>
+      {/* Pulsing rings */}
+      <Animated.View style={[ring2Style, {
+        position: 'absolute', width: 200, height: 200, borderRadius: 100,
+        backgroundColor: '#0078ff',
+      }]} />
+      <Animated.View style={[ring1Style, {
+        position: 'absolute', width: 160, height: 160, borderRadius: 80,
+        backgroundColor: '#0078ff',
+      }]} />
+      {/* Icon circle */}
+      <Animated.View style={[iconStyle, {
+        width: 100, height: 100, borderRadius: 50,
+        backgroundColor: '#0078ff',
+        alignItems: 'center', justifyContent: 'center',
+        boxShadow: [{ offsetX: 0, offsetY: 8, blurRadius: 32, color: 'rgba(0,120,255,0.35)' }],
+      } as any]}>
+        <CheckCircle2 size={52} color="#ffffff" strokeWidth={2.5} />
+      </Animated.View>
+      <Animated.View style={[iconStyle, { marginTop: 28, alignItems: 'center', gap: 6 }]}>
+        <Text style={{ fontSize: 22, fontFamily: F.extraBold, color: '#111827', letterSpacing: -0.3 }}>
+          Verified!
+        </Text>
+        <Text style={{ fontSize: 13, fontFamily: F.semiBold, color: '#6b7280' }}>
+          Signing you in…
+        </Text>
+      </Animated.View>
+    </Animated.View>
   );
 }
 
@@ -145,10 +111,25 @@ export default function SignIn() {
   const [error, setError]             = useState('');
   const [sending, setSending]         = useState(false);
   const [verifying, setVerifying]     = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false);
   const [resendTimer, setResendTimer] = useState(0);
-  const [sendPressed, setSendPressed]   = useState(false);
-  const [verifyPressed, setVerifyPressed] = useState(false);
+  const [sendPressed, setSendPressed] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Shake animation for error state
+  const shakeX = useSharedValue(0);
+  const shakeStyle = useAnimatedStyle(() => ({ transform: [{ translateX: shakeX.value }] }));
+
+  const triggerShake = () => {
+    shakeX.value = withSequence(
+      withTiming(-10, { duration: 60 }),
+      withTiming(10,  { duration: 60 }),
+      withTiming(-8,  { duration: 55 }),
+      withTiming(8,   { duration: 55 }),
+      withTiming(-4,  { duration: 50 }),
+      withTiming(0,   { duration: 50 }),
+    );
+  };
 
   useEffect(() => { warmupFunctions(); }, []);
 
@@ -168,7 +149,6 @@ export default function SignIn() {
     try {
       const data = await callFn('send-otp', { phone: digits, flow: 'login' });
       if (data.error) {
-        // noAccount: true means user never signed up — show a clear message with Sign Up link
         setError(String(data.error));
       } else if (data.sessionId) {
         setSessionId(String(data.sessionId));
@@ -184,6 +164,11 @@ export default function SignIn() {
     }
   };
 
+  const navigateAfterSuccess = (isExpired: boolean) => {
+    if (isExpired) router.replace('/(app)/payment' as any);
+    else router.replace('/');
+  };
+
   const verifyOtp = async () => {
     if (otp.length !== 6) return;
     const digits = phone.replace(/\D/g, '');
@@ -192,6 +177,7 @@ export default function SignIn() {
       const data = await callFn('verify-otp', { sessionId, otp, phone: digits, flow: 'login' });
       if (data.error) {
         setError(String(data.error));
+        triggerShake();
       } else if (data.access_token) {
         const { error: sessionError, data: authData } = await supabase.auth.setSession({
           access_token:  String(data.access_token),
@@ -199,25 +185,26 @@ export default function SignIn() {
         });
         if (sessionError) {
           setError(sessionError.message || 'Sign-in failed. Please try again.');
+          triggerShake();
         } else {
-          // Check subscription — expired trial users must pay before accessing app
+          // Show success animation, then navigate
+          let isExpired = false;
           const uid = authData?.user?.id;
           if (uid) {
             const profile = await getProfile(uid);
             const info = getSubscriptionInfo(profile);
-            if (info.status === 'expired') {
-              // Session is set; gate to paywall — (app)/_layout.tsx will enforce on every nav
-              router.replace('/(app)/payment' as any);
-              return;
-            }
+            if (info.status === 'expired') isExpired = true;
           }
-          router.replace('/');
+          setShowSuccess(true);
+          setTimeout(() => runOnJS(navigateAfterSuccess)(isExpired), 1600);
         }
       } else {
         setError('Verification failed. Please try again.');
+        triggerShake();
       }
     } catch {
       setError('Could not reach server. Check your internet and try again.');
+      triggerShake();
     } finally {
       setVerifying(false);
     }
@@ -235,95 +222,41 @@ export default function SignIn() {
       <View style={{ flex: 1, backgroundColor: '#ffffff' }}>
         <StatusBar style="dark" />
         <KeyboardAvoidingView behavior={process.env.EXPO_OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-          <ScrollView
-            contentContainerStyle={{ flexGrow: 1 }}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-          >
-            {/* ── Center wrapper ───────────────────────────────────── */}
+          <ScrollView contentContainerStyle={{ flexGrow: 1 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
             <View style={{ flex: 1, justifyContent: 'center', paddingVertical: 40 }}>
 
               {/* Logo + headline */}
               <View style={{ alignItems: 'center', marginBottom: 36 }}>
                 <Image
                   source={{ uri: LOGO_URL }}
-                  style={{
-                    width: 112, height: 112, borderRadius: 26,
-                    marginBottom: 24,
-                    boxShadow: [{ offsetX: 0, offsetY: 4, blurRadius: 18, color: 'rgba(0,120,255,0.18)' }],
-                  } as any}
-                  contentFit="fill"
-                  cachePolicy="memory-disk"
+                  style={{ width: 112, height: 112, borderRadius: 26, marginBottom: 24, boxShadow: [{ offsetX: 0, offsetY: 4, blurRadius: 18, color: 'rgba(0,120,255,0.18)' }] } as any}
+                  contentFit="fill" cachePolicy="memory-disk"
                 />
-                <Text style={{ fontSize: 22, fontFamily: F.extraBold, color: '#171c20', letterSpacing: -0.3, textAlign: 'center', marginBottom: 6 }}>
-                  Welcome
-                </Text>
-                <Text style={{ fontSize: 13, fontFamily: F.semiBold, color: '#424753', textAlign: 'center', lineHeight: 19 }}>
-                  Sign in with your mobile number.
-                </Text>
+                <Text style={{ fontSize: 22, fontFamily: F.extraBold, color: '#171c20', letterSpacing: -0.3, textAlign: 'center', marginBottom: 6 }}>Welcome</Text>
+                <Text style={{ fontSize: 13, fontFamily: F.semiBold, color: '#424753', textAlign: 'center', lineHeight: 19 }}>Sign in with your mobile number.</Text>
               </View>
 
               {/* Form card */}
-              <View style={{
-                backgroundColor: '#ffffff',
-                borderWidth: 1, borderColor: '#e0e4ec',
-                boxShadow: [{ offsetX: 0, offsetY: 2, blurRadius: 12, color: 'rgba(0,0,0,0.07)' }],
-                padding: 20,
-                marginBottom: 20,
-              }}>
-                <Text style={{ fontSize: 13, fontFamily: F.bold, color: '#171c20', marginBottom: 10 }}>
-                  Mobile Number
-                </Text>
-
-                {/* Phone input */}
-                <View style={{
-                  flexDirection: 'row', alignItems: 'center',
-                  backgroundColor: '#ffffff', borderRadius: 12, borderWidth: 1,
-                  borderColor: '#c2c6d5', height: 56, paddingHorizontal: 14,
-                }}>
-                  {/* Real India flag image */}
-                  <Image
-                    source={{ uri: 'https://flagcdn.com/w40/in.png' }}
-                    style={{ width: 24, height: 16, borderRadius: 2, marginRight: 6 }}
-                    contentFit="cover"
-                    cachePolicy="memory-disk"
-                  />
+              <View style={{ backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#e0e4ec', boxShadow: [{ offsetX: 0, offsetY: 2, blurRadius: 12, color: 'rgba(0,0,0,0.07)' }], padding: 20, marginBottom: 20 } as any}>
+                <Text style={{ fontSize: 13, fontFamily: F.bold, color: '#171c20', marginBottom: 10 }}>Mobile Number</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#ffffff', borderRadius: 12, borderWidth: 1, borderColor: '#c2c6d5', height: 56, paddingHorizontal: 14 }}>
+                  <Image source={{ uri: 'https://flagcdn.com/w40/in.png' }} style={{ width: 24, height: 16, borderRadius: 2, marginRight: 6 }} contentFit="cover" cachePolicy="memory-disk" />
                   <Text style={{ fontSize: 15, fontFamily: F.semiBold, color: '#171c20', marginRight: 8 }}>+91</Text>
                   <View style={{ width: 1, height: 22, backgroundColor: '#c2c6d5', marginRight: 10 }} />
                   <TextInput
                     value={phone}
                     onChangeText={(v) => { setPhone(v.replace(/\D/g, '').slice(0, 10)); setError(''); }}
-                    placeholder="Enter mobile number"
-                    placeholderTextColor="#a0a8b4"
-                    keyboardType="phone-pad"
-                    maxLength={10}
-                    returnKeyType="done"
-                    onSubmitEditing={sendOtp}
+                    placeholder="Enter mobile number" placeholderTextColor="#a0a8b4"
+                    keyboardType="phone-pad" maxLength={10} returnKeyType="done" onSubmitEditing={sendOtp}
                     style={{ flex: 1, fontSize: 15, fontFamily: F.semiBold, color: '#171c20', outlineWidth: 0 } as any}
                   />
                 </View>
-
-                {/* Error */}
-                {error ? (
-                  <Text style={{ color: '#ba1a1a', fontSize: 12, fontFamily: F.medium, marginTop: 8 }}>{error}</Text>
-                ) : null}
-
-                {/* Send OTP */}
-                <Pressable
-                  onPress={sendOtp}
-                  disabled={sending}
-                  onPressIn={() => setSendPressed(true)}
-                  onPressOut={() => setSendPressed(false)}
-                  style={{
-                    marginTop: 16, borderRadius: 10, height: 44,
-                    alignItems: 'center', justifyContent: 'center',
-                    backgroundColor: '#0078ff',
-                    opacity: sendPressed || sending ? 0.88 : 1,
-                  }}
-                >
-                  <Text style={{ color: '#ffffff', fontSize: 13, fontFamily: F.bold }}>
-                    {sending ? 'Sending OTP…' : 'Send OTP'}
-                  </Text>
+                {error ? <Text style={{ color: '#ba1a1a', fontSize: 12, fontFamily: F.medium, marginTop: 8 }}>{error}</Text> : null}
+                <Pressable onPress={sendOtp} disabled={sending} onPressIn={() => setSendPressed(true)} onPressOut={() => setSendPressed(false)}
+                  style={{ marginTop: 16, borderRadius: 10, height: 48, alignItems: 'center', justifyContent: 'center', backgroundColor: '#0078ff', opacity: sendPressed || sending ? 0.88 : 1 }}>
+                  {sending
+                    ? <ActivityIndicator color="#fff" />
+                    : <Text style={{ color: '#ffffff', fontSize: 14, fontFamily: F.bold }}>Send OTP</Text>}
                 </Pressable>
               </View>
 
@@ -331,15 +264,9 @@ export default function SignIn() {
               <View style={{ alignItems: 'center' }}>
                 <Text style={{ fontSize: 14, fontFamily: F.regular, color: '#424753' }}>
                   Don't have an account?{' '}
-                  <Text
-                    onPress={() => router.push('/(auth)/sign-up')}
-                    style={{ color: '#0058bd', fontFamily: F.bold }}
-                  >
-                    Sign Up
-                  </Text>
+                  <Text onPress={() => router.push('/(auth)/sign-up')} style={{ color: '#0058bd', fontFamily: F.bold }}>Sign Up</Text>
                 </Text>
               </View>
-
             </View>
           </ScrollView>
         </KeyboardAvoidingView>
@@ -351,102 +278,94 @@ export default function SignIn() {
   return (
     <View style={{ flex: 1, backgroundColor: '#ffffff' }}>
       <StatusBar style="dark" />
-      <KeyboardAvoidingView behavior={process.env.EXPO_OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <ScrollView
-          contentContainerStyle={{ flexGrow: 1 }}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
-          <View style={{ flex: 1, paddingVertical: 40 }}>
+      {/* Success overlay — sits above everything */}
+      <SuccessOverlay visible={showSuccess} />
 
-            {/* Back button — matches About Us page style */}
-            <Pressable
-              onPress={() => { setStep('phone'); setOtp(''); setError(''); }}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', marginBottom: 8, paddingHorizontal: 4 }}
-            >
-              <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center' }}>
+      <KeyboardAvoidingView behavior={process.env.EXPO_OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        <ScrollView contentContainerStyle={{ flexGrow: 1 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+          <View style={{ flex: 1, paddingHorizontal: 24, paddingVertical: 40 }}>
+
+            {/* Back button */}
+            <Pressable onPress={() => { setStep('phone'); setOtp(''); setError(''); }}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', marginBottom: 20 }}>
+              <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: '#f3f4f6', alignItems: 'center', justifyContent: 'center' }}>
                 <ArrowLeft size={18} color="#374151" strokeWidth={2} />
               </View>
-              <Text style={{ fontSize: 15, fontFamily: F.semiBold, color: '#374151' }}>Back</Text>
+              <Text style={{ fontSize: 14, fontFamily: F.semiBold, color: '#374151' }}>Back</Text>
             </Pressable>
 
-            {/* Same logo position as login — use lock icon for OTP page */}
-            <View style={{ alignItems: 'center', marginBottom: 28, marginTop: 8 }}>
-              <View style={{
-                width: 96, height: 96, borderRadius: 22,
-                backgroundColor: '#ffffff',
-                boxShadow: [{ offsetX: 0, offsetY: 4, blurRadius: 16, color: 'rgba(0,0,0,0.12)' }],
-                alignItems: 'center', justifyContent: 'center',
-              }}>
-                <Image source={{ uri: LOCK_ICON_URL }} style={{ width: 72, height: 72 }} contentFit="contain" cachePolicy="memory-disk" />
+            {/* Lock icon */}
+            <View style={{ alignItems: 'center', marginBottom: 24 }}>
+              <View style={{ width: 88, height: 88, borderRadius: 22, backgroundColor: '#eff6ff', alignItems: 'center', justifyContent: 'center', marginBottom: 20,
+                boxShadow: [{ offsetX: 0, offsetY: 4, blurRadius: 20, color: 'rgba(0,120,255,0.14)' }] } as any}>
+                <Image source={{ uri: LOCK_ICON_URL }} style={{ width: 60, height: 60 }} contentFit="contain" cachePolicy="memory-disk" />
               </View>
-            </View>
-
-            {/* Title */}
-            <Text style={{ fontSize: 22, fontFamily: F.extraBold, color: '#171c20', textAlign: 'center', marginBottom: 10 }}>
-              Verification
-            </Text>
-
-            {/* Subtitle with real phone */}
-            <Text style={{ fontSize: 13, fontFamily: F.semiBold, color: '#424753', textAlign: 'center', lineHeight: 20, marginBottom: 32 }}>
-              Enter the 6-digit code sent to{'\n'}
-              <Text style={{ color: '#171c20', fontFamily: F.extraBold }}>
-                +91 {phone.slice(0, 5)} {phone.slice(5)}
+              <Text style={{ fontSize: 24, fontFamily: F.extraBold, color: '#111827', letterSpacing: -0.4, marginBottom: 8 }}>
+                Verify Your Number
               </Text>
-            </Text>
-
-            {/* OTP boxes — full width, square, evenly spaced */}
-            <View style={{ paddingHorizontal: 16 }}>
-              <OtpBoxes value={otp} onChange={setOtp} />
+              <Text style={{ fontSize: 14, fontFamily: F.regular, color: '#6b7280', textAlign: 'center', lineHeight: 21 }}>
+                We sent a 6-digit code to{'\n'}
+                <Text style={{ fontFamily: F.bold, color: '#111827' }}>+91 {phone.slice(0, 5)} {phone.slice(5)}</Text>
+              </Text>
             </View>
 
-            {/* Error + optional Sign Up link for incomplete-account errors */}
+            {/* OTP boxes with shake on error */}
+            <Animated.View style={[shakeStyle, { marginBottom: 8 }]}>
+              <OtpInput value={otp} onChange={(v) => { setOtp(v); setError(''); }} hasError={!!error} />
+            </Animated.View>
+
+            {/* Error message */}
             {error ? (
-              <View style={{ alignItems: 'center', marginTop: 12, paddingHorizontal: 16 }}>
-                <Text style={{ color: '#ba1a1a', fontSize: 12, fontFamily: F.medium, textAlign: 'center' }}>{error}</Text>
-                {error.toLowerCase().includes('sign up again') || error.toLowerCase().includes('incomplete') ? (
+              <View style={{ alignItems: 'center', marginTop: 10, marginBottom: 4 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#fef2f2', borderRadius: 8, paddingHorizontal: 14, paddingVertical: 8 }}>
+                  <Text style={{ color: '#dc2626', fontSize: 13, fontFamily: F.medium, textAlign: 'center', flex: 1 }}>{error}</Text>
+                </View>
+                {(error.toLowerCase().includes('sign up again') || error.toLowerCase().includes('incomplete')) ? (
                   <Pressable onPress={() => router.push('/(auth)/sign-up')} style={{ marginTop: 8 }}>
-                    <Text style={{ fontSize: 13, fontFamily: F.bold, color: '#0078ff', textDecorationLine: 'underline' }}>
-                      Go to Sign Up →
-                    </Text>
+                    <Text style={{ fontSize: 13, fontFamily: F.bold, color: '#0078ff', textDecorationLine: 'underline' }}>Go to Sign Up →</Text>
                   </Pressable>
                 ) : null}
               </View>
             ) : null}
 
-            {/* Resend */}
-            <View style={{ alignItems: 'center', marginTop: 36 }}>
-              <Text style={{ fontSize: 13, color: '#727785', fontFamily: F.regular, marginBottom: 4 }}>
+            {/* Verify button — always visible, disabled until 6 digits */}
+            <Pressable
+              onPress={verifyOtp}
+              disabled={otp.length !== 6 || verifying}
+              style={{
+                marginTop: 28, borderRadius: 14, height: 52,
+                alignItems: 'center', justifyContent: 'center',
+                backgroundColor: otp.length === 6 ? '#0078ff' : '#e5e7eb',
+              }}
+            >
+              {verifying
+                ? <ActivityIndicator color={otp.length === 6 ? '#fff' : '#9ca3af'} />
+                : <Text style={{ fontSize: 15, fontFamily: F.bold, color: otp.length === 6 ? '#ffffff' : '#9ca3af' }}>
+                    Verify & Sign In
+                  </Text>
+              }
+            </Pressable>
+
+            {/* Resend section */}
+            <View style={{ alignItems: 'center', marginTop: 32, gap: 8 }}>
+              <Text style={{ fontSize: 13, fontFamily: F.regular, color: '#9ca3af' }}>
                 Didn't receive the code?
               </Text>
-              <Pressable onPress={resend} disabled={resendTimer > 0}>
-                {resendTimer > 0 ? (
-                  <Text style={{ fontSize: 13, fontFamily: F.bold, color: '#727785' }}>Resend in {resendTimer}s</Text>
-                ) : (
-                  <Text style={{ fontSize: 13, fontFamily: F.bold, color: '#0078ff' }}>Resend Code</Text>
-                )}
-              </Pressable>
+              {resendTimer > 0 ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  {/* Countdown pill */}
+                  <View style={{ backgroundColor: '#f3f4f6', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 6 }}>
+                    <Text style={{ fontSize: 13, fontFamily: F.bold, color: '#374151' }}>
+                      Resend in {resendTimer}s
+                    </Text>
+                  </View>
+                </View>
+              ) : (
+                <Pressable onPress={resend} active:opacity-70 style={{ opacity: 1 }}>
+                  <Text style={{ fontSize: 14, fontFamily: F.bold, color: '#0078ff' }}>Resend Code</Text>
+                </Pressable>
+              )}
             </View>
-
-            {/* Verify — shown only when all 6 digits entered */}
-            {otp.length === 6 && (
-              <Pressable
-                onPress={verifyOtp}
-                disabled={verifying}
-                onPressIn={() => setVerifyPressed(true)}
-                onPressOut={() => setVerifyPressed(false)}
-                style={{
-                  marginTop: 24, marginHorizontal: 16, borderRadius: 10, height: 44,
-                  alignItems: 'center', justifyContent: 'center',
-                  backgroundColor: '#0078ff',
-                  opacity: verifyPressed || verifying ? 0.88 : 1,
-                }}
-              >
-                <Text style={{ color: '#ffffff', fontSize: 13, fontFamily: F.bold }}>
-                  {verifying ? 'Verifying…' : 'Verify & Sign In'}
-                </Text>
-              </Pressable>
-            )}
 
           </View>
         </ScrollView>
