@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import 'expo-sqlite/localStorage/install';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const supabaseUrl: string = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co'
 const supabaseAnonKey: string = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'placeholder'
@@ -7,7 +7,7 @@ const supabaseAnonKey: string = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'pl
 // Main client — DB, Auth, Realtime on user's own Supabase project
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    storage: localStorage,
+    storage: AsyncStorage,
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: false,
@@ -20,7 +20,7 @@ const functionsAnonKey: string = process.env.EXPO_PUBLIC_FUNCTIONS_ANON_KEY || s
 
 export const fnClient = createClient(functionsUrl, functionsAnonKey, {
   auth: {
-    storage: localStorage,
+    storage: AsyncStorage,
     autoRefreshToken: false,
     persistSession: false,
     detectSessionInUrl: false,
