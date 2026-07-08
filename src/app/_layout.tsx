@@ -100,13 +100,9 @@ function RootLayoutNav() {
   return (
     <>
       <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Protected guard={isLoading || !session}>
-          <Stack.Screen name="index" />
-          <Stack.Screen name="(auth)" />
-        </Stack.Protected>
-        <Stack.Protected guard={isLoading || !!session}>
-          <Stack.Screen name="(app)" />
-        </Stack.Protected>
+        <Stack.Screen name="index" />
+        <Stack.Screen name="(auth)" />
+        <Stack.Screen name="(app)" />
         <Stack.Screen name="+not-found" />
       </Stack>
 
