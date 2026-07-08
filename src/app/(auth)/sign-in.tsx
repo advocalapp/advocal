@@ -361,7 +361,7 @@ export default function SignIn() {
                   </View>
                 </View>
               ) : (
-                <Pressable onPress={resend} active:opacity-70 style={{ opacity: 1 }}>
+                <Pressable onPress={resend} style={{ opacity: 1 }}>
                   <Text style={{ fontSize: 14, fontFamily: F.bold, color: '#0078ff' }}>Resend Code</Text>
                 </Pressable>
               )}
