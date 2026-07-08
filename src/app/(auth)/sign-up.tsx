@@ -1,13 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
 import {
   View, Text, TextInput, Pressable, ScrollView,
-  KeyboardAvoidingView, ActivityIndicator,
+  KeyboardAvoidingView, ActivityIndicator, Animated,
 } from 'react-native';
-import Animated, {
-  useSharedValue, useAnimatedStyle,
-  withSpring, withTiming, withSequence, withDelay,
-  runOnJS,
-} from 'react-native-reanimated';
 import { Image } from 'expo-image';
 import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
@@ -28,53 +23,51 @@ const NEW_USER_KEY_LOCAL = 'advocal_new_user_pending'; // kept for legacy; use i
 
 // ── Success overlay ───────────────────────────────────────────────────────────
 function SuccessOverlay({ visible }: { visible: boolean }) {
-  const scale   = useSharedValue(0.4);
-  const opacity = useSharedValue(0);
-  const ring1   = useSharedValue(0.8);
-  const ring2   = useSharedValue(0.8);
+  const opacity = useRef(new Animated.Value(0)).current;
+  const scale   = useRef(new Animated.Value(0.4)).current;
+  const ring1   = useRef(new Animated.Value(0.8)).current;
+  const ring2   = useRef(new Animated.Value(0.8)).current;
 
   useEffect(() => {
     if (visible) {
-      opacity.value = withTiming(1, { duration: 200 });
-      scale.value   = withSpring(1, { damping: 14, stiffness: 160 });
-      ring1.value   = withDelay(150, withSpring(1.4, { damping: 10 }));
-      ring2.value   = withDelay(250, withSpring(1.8, { damping: 10 }));
+      Animated.parallel([
+        Animated.timing(opacity, { toValue: 1, duration: 200, useNativeDriver: true }),
+        Animated.spring(scale,   { toValue: 1, damping: 14, stiffness: 160, useNativeDriver: true }),
+        Animated.sequence([
+          Animated.delay(150),
+          Animated.spring(ring1, { toValue: 1.4, damping: 10, useNativeDriver: true }),
+        ]),
+        Animated.sequence([
+          Animated.delay(250),
+          Animated.spring(ring2, { toValue: 1.8, damping: 10, useNativeDriver: true }),
+        ]),
+      ]).start();
     }
   }, [visible, opacity, scale, ring1, ring2]);
 
-  const iconStyle = useAnimatedStyle(() => ({
-    opacity:   opacity.value,
-    transform: [{ scale: scale.value }],
-  }));
-  const ring1Style = useAnimatedStyle(() => ({
-    opacity:   withTiming(visible ? 0.15 : 0, { duration: 300 }),
-    transform: [{ scale: ring1.value }],
-  }));
-  const ring2Style = useAnimatedStyle(() => ({
-    opacity:   withTiming(visible ? 0.08 : 0, { duration: 400 }),
-    transform: [{ scale: ring2.value }],
-  }));
-  const bgStyle = useAnimatedStyle(() => ({
-    opacity: withTiming(visible ? 1 : 0, { duration: 250 }),
-  }));
-
   if (!visible) return null;
   return (
-    <Animated.View style={[bgStyle, {
-      position: 'absolute', inset: 0,
-      backgroundColor: '#ffffff',
-      alignItems: 'center', justifyContent: 'center', zIndex: 99,
-    }]}>
-      <Animated.View style={[ring2Style, { position: 'absolute', width: 200, height: 200, borderRadius: 100, backgroundColor: '#0078ff' }]} />
-      <Animated.View style={[ring1Style, { position: 'absolute', width: 160, height: 160, borderRadius: 80, backgroundColor: '#0078ff' }]} />
-      <Animated.View style={[iconStyle, {
+    <Animated.View style={{
+      position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+      backgroundColor: '#ffffff', alignItems: 'center', justifyContent: 'center',
+      zIndex: 99, opacity,
+    }}>
+      <Animated.View style={{
+        position: 'absolute', width: 200, height: 200, borderRadius: 100,
+        backgroundColor: '#0078ff', opacity: 0.08, transform: [{ scale: ring2 }],
+      }} />
+      <Animated.View style={{
+        position: 'absolute', width: 160, height: 160, borderRadius: 80,
+        backgroundColor: '#0078ff', opacity: 0.15, transform: [{ scale: ring1 }],
+      }} />
+      <Animated.View style={{
         width: 100, height: 100, borderRadius: 50, backgroundColor: '#0078ff',
         alignItems: 'center', justifyContent: 'center',
-        boxShadow: [{ offsetX: 0, offsetY: 8, blurRadius: 32, color: 'rgba(0,120,255,0.35)' }],
-      } as any]}>
+        transform: [{ scale }], opacity,
+      }}>
         <CheckCircle2 size={52} color="#ffffff" strokeWidth={2.5} />
       </Animated.View>
-      <Animated.View style={[iconStyle, { marginTop: 28, alignItems: 'center', gap: 6 }]}>
+      <Animated.View style={{ marginTop: 28, alignItems: 'center', gap: 6, opacity, transform: [{ scale }] }}>
         <Text style={{ fontSize: 22, fontFamily: F.extraBold, color: '#111827', letterSpacing: -0.3 }}>Verified!</Text>
         <Text style={{ fontSize: 13, fontFamily: F.semiBold, color: '#6b7280' }}>Setting up your account…</Text>
       </Animated.View>
@@ -125,14 +118,17 @@ export default function SignUp() {
   const [finishPressed,  setFinishPressed]  = useState(false);
 
   // Shake animation for OTP error
-  const shakeX = useSharedValue(0);
-  const shakeStyle = useAnimatedStyle(() => ({ transform: [{ translateX: shakeX.value }] }));
+  const shakeX = useRef(new Animated.Value(0)).current;
+  const shakeStyle = { transform: [{ translateX: shakeX }] };
   const triggerShake = () => {
-    shakeX.value = withSequence(
-      withTiming(-10, { duration: 60 }), withTiming(10, { duration: 60 }),
-      withTiming(-8,  { duration: 55 }),  withTiming(8,  { duration: 55 }),
-      withTiming(-4,  { duration: 50 }),  withTiming(0,  { duration: 50 }),
-    );
+    Animated.sequence([
+      Animated.timing(shakeX, { toValue: -10, duration: 60, useNativeDriver: true }),
+      Animated.timing(shakeX, { toValue:  10, duration: 60, useNativeDriver: true }),
+      Animated.timing(shakeX, { toValue:  -8, duration: 55, useNativeDriver: true }),
+      Animated.timing(shakeX, { toValue:   8, duration: 55, useNativeDriver: true }),
+      Animated.timing(shakeX, { toValue:  -4, duration: 50, useNativeDriver: true }),
+      Animated.timing(shakeX, { toValue:   0, duration: 50, useNativeDriver: true }),
+    ]).start();
   };
 
   useEffect(() => {
@@ -178,7 +174,7 @@ export default function SignUp() {
         }
         // Show success animation, then go to profile step
         setShowSuccess(true);
-        setTimeout(() => runOnJS(goToProfile)(), 1600);
+        setTimeout(() => goToProfile(), 1600);
       } else { setError('Verification failed. Please try again.'); triggerShake(); }
     } catch { setError('Could not reach server. Check your internet and try again.'); triggerShake(); }
     finally { setVerifying(false); }
