@@ -2,17 +2,10 @@
  * OtpInput — 6-box individual TextInput with:
  * - Auto-focus chain (next on digit, prev on backspace)
  * - Paste support (fills all 6 boxes from clipboard)
- * - Animated active-box scale pulse
  * - textContentType="oneTimeCode" + autoComplete="sms-otp" for SMS auto-fill
  */
 import { useRef, useEffect } from 'react';
 import { View, TextInput } from 'react-native';
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withSpring,
-  withTiming,
-} from 'react-native-reanimated';
 import { F } from '@/lib/fonts';
 
 interface Props {
@@ -106,7 +99,7 @@ export function OtpInput({ value, onChange, autoFocus = true, hasError = false }
   );
 }
 
-// ── Single animated OTP box ───────────────────────────────────────────────────
+// ── Single OTP box (no Reanimated — plain conditional styles) ─────────────────
 function OtpBox({
   refFn, digit, isActive, isFilled, isError,
   onChangeText, onKeyPress,
@@ -119,71 +112,33 @@ function OtpBox({
   onChangeText: (t: string) => void;
   onKeyPress: (k: string) => void;
 }) {
-  const scale = useSharedValue(1);
-  const borderAnim = useSharedValue(isActive ? 1 : 0);
-
-  useEffect(() => {
-    borderAnim.value = withTiming(isActive ? 1 : 0, { duration: 150 });
-    if (isActive) scale.value = withSpring(1.06, { damping: 12 });
-    else scale.value = withSpring(1, { damping: 12 });
-  }, [isActive, borderAnim, scale]);
-
-  const animStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
-  const borderColor = isError
-    ? '#dc2626'
-    : isFilled
-      ? '#0078ff'
-      : isActive
-        ? '#0078ff'
-        : '#d1d5db';
-
-  const bgColor = isError
-    ? '#fef2f2'
-    : isFilled
-      ? '#eff6ff'
-      : '#f9fafb';
+  const borderColor = isError ? '#dc2626' : (isFilled || isActive) ? '#0078ff' : '#d1d5db';
+  const bgColor     = isError ? '#fef2f2' : isFilled ? '#eff6ff' : '#f9fafb';
 
   return (
-    <Animated.View
-      style={[
-        animStyle,
-        {
-          flex: 1,
-          minWidth: 0,
-          height: 58,
-          borderRadius: 14,
-          borderWidth: isActive || isFilled ? 2 : 1.5,
-          borderColor,
-          backgroundColor: bgColor,
-          alignItems: 'center',
-          justifyContent: 'center',
-        },
-      ]}
-    >
+    <View style={{
+      flex: 1, minWidth: 0, height: 58, borderRadius: 14,
+      borderWidth: isActive || isFilled ? 2 : 1.5,
+      borderColor, backgroundColor: bgColor,
+      alignItems: 'center', justifyContent: 'center',
+    }}>
       <TextInput
         ref={refFn}
         value={digit}
         onChangeText={onChangeText}
         onKeyPress={({ nativeEvent }) => onKeyPress(nativeEvent.key)}
         keyboardType="number-pad"
-        maxLength={6}  // allow paste of 6 digits
+        maxLength={6}
         textContentType="oneTimeCode"
         autoComplete="sms-otp"
         selectTextOnFocus
         style={{
-          width: '100%',
-          height: '100%',
-          textAlign: 'center',
-          fontSize: 22,
-          fontFamily: F.bold,
+          width: '100%', height: '100%', textAlign: 'center',
+          fontSize: 22, fontFamily: F.bold,
           color: isError ? '#dc2626' : '#111827',
-          // suppress web outline
           outlineWidth: 0,
         } as any}
       />
-    </Animated.View>
+    </View>
   );
 }
