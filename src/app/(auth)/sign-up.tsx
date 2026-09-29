@@ -76,7 +76,17 @@ function SuccessOverlay({ visible }: { visible: boolean }) {
 }
 async function callFn(name: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
   const { data, error } = await fnClient.functions.invoke(name, { body });
-  if (error) throw error;
+  if (error) {
+    try {
+      if ((error as any)?.context && typeof (error as any).context.json === 'function') {
+        const errBody = await (error as any).context.json();
+        if (errBody && typeof errBody === 'object' && errBody.error) {
+          return { error: String(errBody.error) };
+        }
+      }
+    } catch {}
+    throw error;
+  }
   return (data ?? {}) as Record<string, unknown>;
 }
 
